@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { classId, dayOfWeek, period, subjectId, teacherId } = await req.json();
+    const { classId, dayOfWeek, period, subjectId, teacherId, subjectName } = await req.json();
 
     if (!classId || !dayOfWeek || !period || !subjectId) {
       return NextResponse.json(
@@ -80,6 +80,53 @@ export async function POST(req: NextRequest) {
     const adminSupabase = createAdminSupabaseClient();
     const cleanDay = Number(dayOfWeek);
     const cleanPeriod = Number(period);
+
+    // التحقق من أن معرف المادة UUID صالح، وإذا لم يكن كذلك يتم جلبه أو إنشاؤه في جدول subjects
+    let finalSubjectId = subjectId;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(subjectId);
+
+    if (!isUUID) {
+      const DEFAULT_SUBJECTS = [
+        "التربية الإسلامية", "اللغة العربية", "اللغة الإنجليزية", "الرياضيات",
+        "العلوم", "الفيزياء", "الكيمياء", "الأحياء",
+        "الاجتماعيات", "الحاسوب", "التربية الفنية", "التربية الرياضية"
+      ];
+
+      let targetName = subjectName || "";
+      if (!targetName && typeof subjectId === "string" && subjectId.startsWith("sub-")) {
+        const idx = parseInt(subjectId.replace("sub-", ""), 10) - 1;
+        targetName = DEFAULT_SUBJECTS[idx] || "التربية الإسلامية";
+      }
+
+      if (targetName) {
+        const { data: matchedSub } = await adminSupabase
+          .from("subjects")
+          .select("id")
+          .eq("name", targetName)
+          .maybeSingle();
+
+        if (matchedSub?.id) {
+          finalSubjectId = matchedSub.id;
+        } else {
+          const { data: newSub } = await adminSupabase
+            .from("subjects")
+            .insert({ name: targetName, stage: "عام" })
+            .select("id")
+            .maybeSingle();
+          if (newSub?.id) {
+            finalSubjectId = newSub.id;
+          }
+        }
+      }
+
+      // كحل احتياطي، أخذ أول مادة مسجلة بـ UUID
+      if (finalSubjectId === subjectId) {
+        const { data: anySub } = await adminSupabase.from("subjects").select("id").limit(1).maybeSingle();
+        if (anySub?.id) {
+          finalSubjectId = anySub.id;
+        }
+      }
+    }
 
     // 1. حذف الحصة السابقة في نفس اليوم والحصة (استبدال الحصة)
     const { error: delErr } = await adminSupabase
@@ -108,7 +155,7 @@ export async function POST(req: NextRequest) {
         class_id: classId,
         day_of_week: cleanDay,
         period: cleanPeriod,
-        subject_id: subjectId,
+        subject_id: finalSubjectId,
         teacher_id: teacherId || null,
       })
       .select("*")

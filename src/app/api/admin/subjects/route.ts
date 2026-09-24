@@ -35,19 +35,30 @@ export async function GET() {
     if (!subjects || subjects.length === 0) {
       try {
         const inserts = DEFAULT_SUBJECTS.map((name) => ({ name, stage: "عام" }));
-        await adminSupabase.from("subjects").insert(inserts);
+        await adminSupabase.from("subjects").upsert(inserts, { onConflict: "name" });
         const { data: newSubs } = await adminSupabase.from("subjects").select("id, name, stage").order("name");
-        subjects = newSubs || DEFAULT_SUBJECTS.map((name, i) => ({ id: `sub-${i + 1}`, name, stage: "عام" }));
+        subjects = newSubs;
       } catch (insertErr) {
-        // في حال تعذر الإدراج المباشر نرجع المواد كعناصر افتراضية
-        subjects = DEFAULT_SUBJECTS.map((name, i) => ({ id: `sub-${i + 1}`, name, stage: "عام" }));
+        console.warn("Could not seed default subjects:", insertErr);
       }
+    }
+
+    if (!subjects || subjects.length === 0) {
+      // استخدام UUID حقيقي في حال عدم وجود قاعدة بيانات لتجنب خطأ UUID في الجداول
+      subjects = DEFAULT_SUBJECTS.map((name, i) => ({
+        id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, "0")}`,
+        name,
+        stage: "عام",
+      }));
     }
 
     return NextResponse.json({ subjects: subjects || [] });
   } catch (err: unknown) {
-    // إرجاع المواد الافتراضية دائماً لضمان عدم توقف الواجهة
-    const fallbackSubjects = DEFAULT_SUBJECTS.map((name, i) => ({ id: `sub-${i + 1}`, name, stage: "عام" }));
+    const fallbackSubjects = DEFAULT_SUBJECTS.map((name, i) => ({
+      id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, "0")}`,
+      name,
+      stage: "عام",
+    }));
     return NextResponse.json({ subjects: fallbackSubjects });
   }
 }

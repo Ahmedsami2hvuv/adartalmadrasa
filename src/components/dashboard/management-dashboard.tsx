@@ -517,6 +517,7 @@ export function ManagementDashboard({
     setScheduleError("");
 
     try {
+      const selectedSub = subjects.find((s) => s.id === cellSubjectId);
       const res = await fetch("/api/admin/schedules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -525,6 +526,7 @@ export function ManagementDashboard({
           dayOfWeek: activeCell.day,
           period: activeCell.period,
           subjectId: cellSubjectId,
+          subjectName: selectedSub?.name || "",
           teacherId: cellTeacherId || null,
         }),
       });
