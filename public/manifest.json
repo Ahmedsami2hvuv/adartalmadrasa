@@ -1,17 +1,26 @@
 {
-  "name": "إدارة المدرسة",
+  "name": "نظام إدارة المدرسة الذكية",
   "short_name": "مدرستي",
-  "description": "نظام إدارة المدرسة المتكامل",
+  "description": "منصة سحابية متكاملة لإدارة المدارس والصفوف والدرجات والواجبات",
   "start_url": "/dashboard",
-  "scope": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "theme_color": "#0f766e",
-  "background_color": "#f8fafc",
-  "lang": "ar",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
   "dir": "rtl",
+  "lang": "ar",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }
