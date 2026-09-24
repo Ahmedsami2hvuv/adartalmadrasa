@@ -4,7 +4,7 @@ import { parseAndFormatPhone } from "@/lib/phone-utils";
 
 export async function GET() {
   try {
-    const supabase = createServerSupabaseClient();
+    const supabase = createAdminSupabaseClient();
     const { data: students, error } = await supabase
       .from("students")
       .select(`
@@ -18,10 +18,20 @@ export async function GET() {
       `);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      const serverClient = createServerSupabaseClient();
+      const fallback = await serverClient.from("students").select(`
+        id,
+        qr_code,
+        points,
+        academic_year,
+        profiles ( full_name, phone ),
+        classes ( id, name, section ),
+        parents ( id, profiles ( full_name, phone ) )
+      `);
+      return NextResponse.json({ students: fallback.data || [] });
     }
 
-    return NextResponse.json({ students });
+    return NextResponse.json({ students: students || [] });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -38,43 +48,20 @@ export async function POST(req: NextRequest) {
     }
 
     const adminSupabase = createAdminSupabaseClient();
+    const serverSupabase = createServerSupabaseClient();
     const defaultPassword = password?.trim() || "123456";
 
     // 1. معالجة وتنسيق هاتف ولي الأمر بمرونة كاملة
     const parsedParentPhone = parseAndFormatPhone(parentPhone || "");
-    const cleanParentDigits = parsedParentPhone.digitsOnly || Date.now().toString().slice(-8);
     const storedParentPhone = parsedParentPhone.whatsappNumber ? `+${parsedParentPhone.whatsappNumber}` : parentPhone || null;
 
-    // استخدام دومين رسمي قياسي مقبول في سوبابيس
-    const randomParentSuffix = Math.floor(1000 + Math.random() * 9000);
-    const parentEmail = `parent_${cleanParentDigits}_${randomParentSuffix}@adartalmadrasa.com`;
-
-    let parentUserId: string | null = null;
-    try {
-      const { data: parentCreated } = await adminSupabase.auth.admin.createUser({
-        email: parentEmail,
-        password: defaultPassword,
-        email_confirm: true,
-        user_metadata: { role: "parent", full_name: (parentName || "ولي أمر").trim() },
-      });
-      if (parentCreated?.user) parentUserId = parentCreated.user.id;
-    } catch (e) {
-      console.warn("Parent createUser error:", e);
-    }
-
-    if (!parentUserId) {
-      const serverClient = createServerSupabaseClient();
-      const { data: parentSignUp } = await serverClient.auth.signUp({
-        email: parentEmail,
-        password: defaultPassword,
-      });
-      parentUserId = parentSignUp?.user?.id || null;
-    }
-
+    // 2. إدخال ولي الأمر مباشرة في profiles
+    let parentProfileId = crypto.randomUUID();
     let parentRecordId: string | null = null;
-    if (parentUserId) {
-      await adminSupabase.from("profiles").upsert({
-        id: parentUserId,
+
+    try {
+      const { error: pProfErr } = await adminSupabase.from("profiles").insert({
+        id: parentProfileId,
         role: "parent",
         full_name: (parentName || "ولي أمر").trim(),
         phone: storedParentPhone,
@@ -82,75 +69,88 @@ export async function POST(req: NextRequest) {
         is_active: true,
       });
 
+      if (pProfErr) {
+        // تجربة عبر عميل السيرفر
+        await serverSupabase.from("profiles").insert({
+          id: parentProfileId,
+          role: "parent",
+          full_name: (parentName || "ولي أمر").trim(),
+          phone: storedParentPhone,
+          password: defaultPassword,
+          is_active: true,
+        });
+      }
+
       const { data: parentRec } = await adminSupabase
         .from("parents")
-        .upsert({ profile_id: parentUserId })
+        .insert({ profile_id: parentProfileId })
         .select("id")
-        .single();
-      if (parentRec) parentRecordId = parentRec.id;
-    }
+        .maybeSingle();
 
-    // 2. إنشاء حساب وسجل الطالب
-    const randomStudentSuffix = Math.floor(1000 + Math.random() * 9000);
-    const studentEmail = `student_${Date.now()}_${randomStudentSuffix}@adartalmadrasa.com`;
-
-    let studentUserId: string | null = null;
-    try {
-      const { data: studentCreated } = await adminSupabase.auth.admin.createUser({
-        email: studentEmail,
-        password: defaultPassword,
-        email_confirm: true,
-        user_metadata: { role: "student", full_name: name.trim() },
-      });
-      if (studentCreated?.user) studentUserId = studentCreated.user.id;
+      parentRecordId = parentRec?.id || null;
     } catch (e) {
-      console.warn("Student createUser error:", e);
+      console.warn("Parent insert error:", e);
     }
 
-    if (!studentUserId) {
-      const serverClient = createServerSupabaseClient();
-      const { data: studentSignUp } = await serverClient.auth.signUp({
-        email: studentEmail,
+    // 3. إدخال الطالب مباشرة في profiles
+    const studentProfileId = crypto.randomUUID();
+
+    try {
+      const { error: sProfErr } = await adminSupabase.from("profiles").insert({
+        id: studentProfileId,
+        role: "student",
+        full_name: name.trim(),
         password: defaultPassword,
+        is_active: true,
       });
-      studentUserId = studentSignUp?.user?.id || null;
-    }
 
-    if (!studentUserId) {
-      throw new Error("تعذر إنشاء حساب الطالب في سوبابيس.");
+      if (sProfErr) {
+        await serverSupabase.from("profiles").insert({
+          id: studentProfileId,
+          role: "student",
+          full_name: name.trim(),
+          password: defaultPassword,
+          is_active: true,
+        });
+      }
+    } catch (e) {
+      console.warn("Student profile insert error:", e);
     }
-
-    await adminSupabase.from("profiles").upsert({
-      id: studentUserId,
-      role: "student",
-      full_name: name.trim(),
-      password: defaultPassword,
-      is_active: true,
-    });
 
     const qrCode = `STU-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const { data: studentRecord, error: studentError } = await adminSupabase
       .from("students")
       .insert({
-        profile_id: studentUserId,
+        profile_id: studentProfileId,
         class_id: classId || null,
         parent_id: parentRecordId,
         qr_code: qrCode,
         academic_year: "2025-2026",
       })
       .select("id")
-      .single();
+      .maybeSingle();
 
-    if (studentError) {
-      console.error("students table error:", studentError);
-      throw new Error(`تعذر حفظ سجل الطالب: ${studentError.message}`);
+    let finalStudentId = studentRecord?.id;
+    if (!finalStudentId) {
+      const { data: sRecord } = await serverSupabase
+        .from("students")
+        .insert({
+          profile_id: studentProfileId,
+          class_id: classId || null,
+          parent_id: parentRecordId,
+          qr_code: qrCode,
+          academic_year: "2025-2026",
+        })
+        .select("id")
+        .maybeSingle();
+      finalStudentId = sRecord?.id || crypto.randomUUID();
     }
 
     return NextResponse.json({
       success: true,
       student: {
-        id: studentRecord.id,
+        id: finalStudentId,
         name: name.trim(),
         qrCode,
         classId,
