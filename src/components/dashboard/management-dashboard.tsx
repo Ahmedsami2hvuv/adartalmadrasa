@@ -19,6 +19,9 @@ import {
   CheckCircle2,
   BookMarked,
   Sparkles,
+  Copy,
+  ExternalLink,
+  Link as LinkIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
@@ -106,7 +109,7 @@ export function ManagementDashboard({
 
   // النوافذ وحالات التحميل
   const [newTeacherModal, setNewTeacherModal] = useState(false);
-  const [newTeacherData, setNewTeacherData] = useState({ name: "", phone: "", subject: "", password: "" });
+  const [newTeacherData, setNewTeacherData] = useState({ name: "", phone: "", subject: "" });
   const [teacherLoading, setTeacherLoading] = useState(false);
   const [teacherMsg, setTeacherMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -116,9 +119,12 @@ export function ManagementDashboard({
   const [classMsg, setClassMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [newStudentModal, setNewStudentModal] = useState(false);
-  const [newStudentData, setNewStudentData] = useState({ name: "", classId: "", parentName: "", parentPhone: "", password: "" });
+  const [newStudentData, setNewStudentData] = useState({ name: "", classId: "", parentName: "", parentPhone: "" });
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentMsg, setStudentMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // إشعار نسخ الرابط المباشر
+  const [copySuccess, setCopySuccess] = useState<string | null>(null);
 
   // إدارة المواد
   const [subjectsModal, setSubjectsModal] = useState(false);
@@ -285,7 +291,7 @@ export function ManagementDashboard({
       }
 
       setTeacherMsg({ type: "success", text: `تمت إضافة المعلم (${data.teacher.name}) وإنشاء حسابه بنجاح!` });
-      setNewTeacherData({ name: "", phone: "", subject: "", password: "" });
+      setNewTeacherData({ name: "", phone: "", subject: "" });
       fetchAllData();
       setTimeout(() => {
         setNewTeacherModal(false);
@@ -299,22 +305,32 @@ export function ManagementDashboard({
     }
   };
 
-  // إرسال واتساب للمعلم بالصيغة الدولية المعتمدة 100%
+  // دالة نسخ الرابط المباشر
+  const copyToClipboard = (text: string, label: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopySuccess(`تم نسخ ${label} إلى الحافظة بنجاح!`);
+      setTimeout(() => setCopySuccess(null), 3000);
+    }
+  };
+
+  // إرسال واتساب للمعلم مع رابط الدخول المباشر لحسابه بدون رمز سري
   const sendWhatsAppInvite = (teacher: Teacher) => {
     const parsed = parseAndFormatPhone(teacher.phone);
-    const inviteLink = `${window.location.origin}/login`;
+    const directLink = `${window.location.origin}/portal?role=teacher&id=${teacher.id}&name=${encodeURIComponent(teacher.name)}`;
     const message = encodeURIComponent(
-      `دعوة رسمية من ${settings.schoolName}:\nالأستاذ/ة ${teacher.name}، تم تفعيل حسابكم في منصة إدارة المدرسة.\nيمكنكم تسجيل الدخول برقم هاتفكم أو كلمة المرور عبر الرابط:\n${inviteLink}`
+      `دعوة رسمية من ${settings.schoolName}:\nالأستاذ/ة ${teacher.name} المحترم/ة،\nتم تفعيل حسابكم لمادة (${teacher.subject}).\nيمكنكم الدخول المباشر إلى حسابكم بدون أي رمز سري بمجرد النقر على الرابط التالي:\n${directLink}`
     );
     const targetNumber = parsed.whatsappNumber || teacher.phone.replace(/[^0-9]/g, "");
     window.open(`https://wa.me/${targetNumber}?text=${message}`, "_blank");
   };
 
-  // إرسال واتساب لولي الأمر
+  // إرسال واتساب لولي الأمر مع رابط الدخول المباشر لمتابعة ابنه
   const sendWhatsAppToParent = (student: Student) => {
     const parsed = parseAndFormatPhone(student.parentPhone);
+    const directLink = `${window.location.origin}/portal?role=parent&id=${student.id}&name=${encodeURIComponent(student.parentName)}`;
     const message = encodeURIComponent(
-      `تحية طيبة من إدارة ${settings.schoolName}:\nولي أمر الطالب/ة ${student.name}، هذا إشعار لمتابعة الحضور والتقارير الأكاديمية للطالب عبر المنصة المدرسية.`
+      `تحية طيبة من إدارة ${settings.schoolName}:\nولي أمر الطالب/ة ${student.name} المحترم،\nيمكنكم متابعة الحضور والغياب والمستوى الدراسي والواجبات لابنكم مباشرة وبدون أي رمز سري عبر هذا الرابط:\n${directLink}`
     );
     const targetNumber = parsed.whatsappNumber || student.parentPhone.replace(/[^0-9]/g, "");
     window.open(`https://wa.me/${targetNumber}?text=${message}`, "_blank");
@@ -407,7 +423,7 @@ export function ManagementDashboard({
       }
 
       setStudentMsg({ type: "success", text: `تم تسجيل الطالب (${data.student.name}) وتوليد كود الـ QR بنجاح!` });
-      setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "", password: "" });
+      setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
       fetchAllData();
       setTimeout(() => {
         setNewStudentModal(false);
@@ -649,6 +665,22 @@ export function ManagementDashboard({
 
       {/* المحتوى */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 w-full mt-6 flex-1">
+        {/* إشعار نسخ الرابط المباشر */}
+        {copySuccess && (
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>{copySuccess}</span>
+            </div>
+            <button
+              onClick={() => setCopySuccess(null)}
+              className="text-emerald-700 hover:text-emerald-900 text-xs px-2"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* النظرة العامة */}
         {activeTab === "overview" && (
           <div className="space-y-5">
@@ -662,7 +694,7 @@ export function ManagementDashboard({
               <div className="bg-white border border-slate-200 rounded-lg p-4">
                 <div className="text-xs font-semibold text-slate-500 mb-1">الكادر التدريسي</div>
                 <div className="text-2xl font-bold text-slate-900">{teachers.length}</div>
-                <div className="text-[11px] text-slate-600 mt-1">حسابات نشطة ومسندة للمواد</div>
+                <div className="text-[11px] text-slate-600 mt-1">حسابات نشطة ومهيأة للروابط المباشرة</div>
               </div>
 
               <div className="bg-white border border-slate-200 rounded-lg p-4">
@@ -680,11 +712,11 @@ export function ManagementDashboard({
 
             <div className="bg-white border border-slate-200 rounded-lg p-5">
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
-                حالة النظام والاتصال
+                حالة النظام والكيانات التعليمية
               </h3>
               <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-md">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>قاعدة بيانات سوبابيس (Supabase) متصلة وتعمل بصورة مباشرة وآمنة.</span>
+                <span>نظام الكيانات وروابط الدخول المباشر بدون رمز سري نشط ويعمل بالكامل.</span>
               </div>
             </div>
           </div>
@@ -696,7 +728,7 @@ export function ManagementDashboard({
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-bold text-slate-900">سجل المعلمين والمدرسين</h2>
-                <p className="text-xs text-slate-500">إدارة حسابات الكادر وتعيين المواد والتواصل</p>
+                <p className="text-xs text-slate-500">إدارة حسابات الكادر وتوليد روابط الدخول المباشر بدون رمز سري</p>
               </div>
               <Button
                 onClick={() => {
@@ -717,31 +749,60 @@ export function ManagementDashboard({
                     <th className="p-3">اسم المعلم</th>
                     <th className="p-3">المادة</th>
                     <th className="p-3">الهاتف</th>
-                    <th className="p-3">رمز الدعوة</th>
-                    <th className="p-3 text-center">دعوة واتساب</th>
+                    <th className="p-3">رابط الدخول المباشر (بدون رمز سري)</th>
+                    <th className="p-3 text-center">مشاركة واتساب</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {teachers.map((teacher) => (
-                    <tr key={teacher.id} className="hover:bg-slate-50/60">
-                      <td className="p-3 font-semibold text-slate-900">{teacher.name}</td>
-                      <td className="p-3 text-slate-600">{teacher.subject}</td>
-                      <td className="p-3 font-mono text-slate-700" dir="ltr">
-                        {parseAndFormatPhone(teacher.phone).displayFormatted}
-                      </td>
-                      <td className="p-3 font-mono text-slate-700">{teacher.inviteToken}</td>
-                      <td className="p-3 text-center">
-                        <button
-                          onClick={() => sendWhatsAppInvite(teacher)}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-medium text-xs border border-emerald-200 transition"
-                          title="فتح محادثة واتساب مع المعلم"
-                        >
-                          <Share2 className="w-3 h-3 text-emerald-600" />
-                          <span>إرسال عبر واتساب</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {teachers.map((teacher) => {
+                    const directTeacherLink = typeof window !== "undefined"
+                      ? `${window.location.origin}/portal?role=teacher&id=${teacher.id}&name=${encodeURIComponent(teacher.name)}`
+                      : `/portal?role=teacher&id=${teacher.id}`;
+
+                    return (
+                      <tr key={teacher.id} className="hover:bg-slate-50/60">
+                        <td className="p-3 font-semibold text-slate-900">{teacher.name}</td>
+                        <td className="p-3 text-slate-600">{teacher.subject}</td>
+                        <td className="p-3 font-mono text-slate-700" dir="ltr">
+                          {parseAndFormatPhone(teacher.phone).displayFormatted}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(directTeacherLink, `رابط الأستاذ ${teacher.name}`)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-[11px] border border-slate-200 transition"
+                              title="نسخ رابط الدخول المباشر"
+                            >
+                              <Copy className="w-3 h-3 text-slate-600" />
+                              <span>نسخ الرابط</span>
+                            </button>
+
+                            <a
+                              href={directTeacherLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-50 hover:bg-slate-100 text-slate-600 text-[11px] border border-slate-200 transition"
+                              title="تجربة الدخول بحساب المعلم مباشرة"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>فتح</span>
+                            </a>
+                          </div>
+                        </td>
+                        <td className="p-3 text-center">
+                          <button
+                            onClick={() => sendWhatsAppInvite(teacher)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-medium text-xs border border-emerald-200 transition"
+                            title="إرسال رابط الحساب عبر واتساب"
+                          >
+                            <Share2 className="w-3 h-3 text-emerald-600" />
+                            <span>إرسال الرابط بالواتساب</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {teachers.length === 0 && (
                     <tr>
                       <td colSpan={5} className="p-6 text-center text-slate-400">
@@ -911,62 +972,124 @@ export function ManagementDashboard({
                     <th className="p-3">اسم الطالب</th>
                     <th className="p-3">الصف والشعبة</th>
                     <th className="p-3">ولي الأمر</th>
+                    <th className="p-3">الروابط المباشرة (بدون رمز)</th>
                     <th className="p-3">رمز الحضور (QR)</th>
                     <th className="p-3">نقل الشعبة</th>
                     <th className="p-3 text-center">التقرير الأكاديمي</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {students.map((student) => (
-                    <tr key={student.id} className="hover:bg-slate-50/60">
-                      <td className="p-3 font-semibold text-slate-900">{student.name}</td>
-                      <td className="p-3 text-slate-600">{student.className}</td>
-                      <td className="p-3 text-slate-600">
-                        <div className="font-semibold text-slate-800">{student.parentName}</div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[11px] text-slate-500 font-mono" dir="ltr">
-                            {parseAndFormatPhone(student.parentPhone).displayFormatted}
-                          </span>
-                          {student.parentPhone && student.parentPhone !== "-" && (
-                            <button
-                              onClick={() => sendWhatsAppToParent(student)}
-                              className="inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 transition"
-                              title="مراسلة ولي الأمر عبر واتساب"
-                            >
-                              <Share2 className="w-2.5 h-2.5 text-emerald-600" />
-                              <span>واتساب</span>
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-3 font-mono text-slate-700 font-semibold">{student.qrCode}</td>
-                      <td className="p-3">
-                        <select
-                          value={student.classId || ""}
-                          onChange={(e) => handleMoveStudent(student.id, e.target.value)}
-                          className="bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800"
-                        >
-                          {classes.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} ({c.section})
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-3 text-center">
-                        <button
-                          onClick={() => handleGenerateStudentPDF(student)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-xs border border-slate-200"
-                        >
-                          <FileDown className="w-3.5 h-3.5 text-slate-600" />
-                          <span>كشف درجات PDF</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {students.map((student) => {
+                    const directParentLink = typeof window !== "undefined"
+                      ? `${window.location.origin}/portal?role=parent&id=${student.id}&name=${encodeURIComponent(student.parentName)}`
+                      : `/portal?role=parent&id=${student.id}`;
+
+                    const directStudentLink = typeof window !== "undefined"
+                      ? `${window.location.origin}/portal?role=student&id=${student.id}&name=${encodeURIComponent(student.name)}`
+                      : `/portal?role=student&id=${student.id}`;
+
+                    return (
+                      <tr key={student.id} className="hover:bg-slate-50/60">
+                        <td className="p-3 font-semibold text-slate-900">{student.name}</td>
+                        <td className="p-3 text-slate-600">{student.className}</td>
+                        <td className="p-3 text-slate-600">
+                          <div className="font-semibold text-slate-800">{student.parentName}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[11px] text-slate-500 font-mono" dir="ltr">
+                              {parseAndFormatPhone(student.parentPhone).displayFormatted}
+                            </span>
+                            {student.parentPhone && student.parentPhone !== "-" && (
+                              <button
+                                onClick={() => sendWhatsAppToParent(student)}
+                                className="inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 transition"
+                                title="مراسلة ولي الأمر برابط المتابعة المباشر عبر واتساب"
+                              >
+                                <Share2 className="w-2.5 h-2.5 text-emerald-600" />
+                                <span>واتساب</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <div className="flex flex-col gap-1.5">
+                            {/* رابط ولي الأمر */}
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-500 font-semibold w-14">ولي الأمر:</span>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(directParentLink, `رابط ولي أمر الطالب ${student.name}`)}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] border border-slate-200"
+                                title="نسخ رابط ولي الأمر"
+                              >
+                                <Copy className="w-2.5 h-2.5" />
+                                <span>نسخ</span>
+                              </button>
+                              <a
+                                href={directParentLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-50 hover:bg-slate-100 text-slate-600 text-[10px] border border-slate-200"
+                                title="فتح لوحة ولي الأمر"
+                              >
+                                <ExternalLink className="w-2.5 h-2.5" />
+                                <span>فتح</span>
+                              </a>
+                            </div>
+
+                            {/* رابط الطالب */}
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-500 font-semibold w-14">الطالب:</span>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(directStudentLink, `رابط الطالب ${student.name}`)}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] border border-slate-200"
+                                title="نسخ رابط الطالب"
+                              >
+                                <Copy className="w-2.5 h-2.5" />
+                                <span>نسخ</span>
+                              </button>
+                              <a
+                                href={directStudentLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-50 hover:bg-slate-100 text-slate-600 text-[10px] border border-slate-200"
+                                title="فتح لوحة الطالب"
+                              >
+                                <ExternalLink className="w-2.5 h-2.5" />
+                                <span>فتح</span>
+                              </a>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3 font-mono text-slate-700 font-semibold">{student.qrCode}</td>
+                        <td className="p-3">
+                          <select
+                            value={student.classId || ""}
+                            onChange={(e) => handleMoveStudent(student.id, e.target.value)}
+                            className="bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800"
+                          >
+                            {classes.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} ({c.section})
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-3 text-center">
+                          <button
+                            onClick={() => handleGenerateStudentPDF(student)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-xs border border-slate-200"
+                          >
+                            <FileDown className="w-3.5 h-3.5 text-slate-600" />
+                            <span>كشف درجات PDF</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {students.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-slate-400">
+                      <td colSpan={7} className="p-6 text-center text-slate-400">
                         لا يوجد طلاب مسجلون بعد. اضغط &quot;تسجيل طالب وولي أمر&quot; لإضافة أول طالب في المدرسة.
                       </td>
                     </tr>
@@ -1407,16 +1530,8 @@ export function ManagementDashboard({
                 </select>
               </div>
 
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">كلمة مرور الحساب (اختياري):</label>
-                <input
-                  type="password"
-                  value={newTeacherData.password}
-                  onChange={(e) => setNewTeacherData({ ...newTeacherData, password: e.target.value })}
-                  placeholder="تلقائياً نفس رقم الهاتف أو 123456"
-                  className="w-full px-3 py-2 border rounded-lg border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-slate-800"
-                  dir="ltr"
-                />
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-2.5 rounded-lg text-[11px] leading-relaxed">
+                ✨ <strong>دخول مباشر بالرابط:</strong> سيقوم النظام تلقائياً بتوليد رابط دخول خاص للمعلم يفتح حسابه بنقرة واحدة بدون الحاجة لكتابة أي كلمة مرور أو رمز سري.
               </div>
 
               <div className="flex justify-end gap-2 pt-3">
