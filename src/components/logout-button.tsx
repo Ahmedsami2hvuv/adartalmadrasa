@@ -15,6 +15,7 @@ export function LogoutButton() {
       // مسح كوكيز المصادقة المباشرة
       document.cookie = "auth_role=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT";
       document.cookie = "auth_name=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT";
+      document.cookie = "auth_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT";
 
       const supabase = createClient();
       await supabase.auth.signOut();
