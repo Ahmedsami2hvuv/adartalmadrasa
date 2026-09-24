@@ -450,6 +450,18 @@ export function ManagementDashboard({
     }
   };
 
+  // حذف مادة دراسية
+  const handleDeleteSubject = async (subId: string, subName: string) => {
+    if (!confirm(`هل تؤكد حذف مادة (${subName}) من قائمة المواد المعتمدة؟`)) return;
+    try {
+      await fetch(`/api/admin/subjects?id=${subId}`, { method: "DELETE" });
+      setSubjects((prev) => prev.filter((s) => s.id !== subId));
+      setSubjectMsg({ type: "success", text: `تم حذف مادة (${subName}) بنجاح.` });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   // فتح نافذة تحديد مادة لخلية معينة في الجدول
   const openCellModal = (day: number, period: number) => {
     const existing = schedules.find(
@@ -843,27 +855,102 @@ export function ManagementDashboard({
           </div>
         )}
 
-        {/* الجدول الأسبوعي (الشبكة التفاعلية: الأحد إلى الخميس - 5 خلايا لكل يوم) */}
+        {/* الجدول الأسبوعي التفاعلي والمواد وأنصبة المدرسين */}
         {activeTab === "schedule" && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center">
-                  <Calendar className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900">الجدول الأسبوعي التفاعلي</h2>
-                  <p className="text-xs text-slate-500">اختر الصف وانقر على أي حصة لتحديد المادة والمعلم فوراً</p>
+          <div className="space-y-6">
+            {/* 1. قسم إضافة وإدارة المواد الدراسية (فقط اسم المادة) */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                    <BookMarked className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">نظام المواد الدراسية المعتمدة</h3>
+                    <p className="text-[11px] text-slate-500">أدخل اسم المادة لإتاحتها فوراً في جدول الحصص وكادر المعلمين</p>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-semibold text-slate-700">الصف:</span>
+              {subjectMsg && (
+                <div
+                  className={`p-2.5 mb-3 rounded-lg text-xs flex items-center gap-2 ${
+                    subjectMsg.type === "success"
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : "bg-rose-50 text-rose-700 border border-rose-200"
+                  }`}
+                >
+                  {subjectMsg.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+                  <span>{subjectMsg.text}</span>
+                </div>
+              )}
+
+              {/* نموذج إضافة مادة: فقط اسم المادة وزر الإضافة */}
+              <form onSubmit={handleAddSubject} className="flex gap-2 max-w-lg mb-3">
+                <input
+                  type="text"
+                  value={newSubjectName}
+                  onChange={(e) => setNewSubjectName(e.target.value)}
+                  placeholder="اكتب اسم المادة (مثال: الرياضيات، التاريخ، الأحياء، الحاسوب...)"
+                  required
+                  className="flex-1 px-3.5 py-2 border rounded-lg border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                />
+                <Button
+                  type="submit"
+                  disabled={subjectLoading}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 px-4 shrink-0 gap-1.5 font-semibold"
+                >
+                  {subjectLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  <span>إضافة مادة</span>
+                </Button>
+              </form>
+
+              {/* قائمة المواد الحالية مع خيار الحذف السريع */}
+              <div className="pt-2 border-t border-slate-100">
+                <span className="text-[11px] font-bold text-slate-500 block mb-2">المواد المسجلة حالياً بالمدرسة ({subjects.length}):</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {subjects.map((sub) => (
+                    <span
+                      key={sub.id}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200 group"
+                    >
+                      <span>{sub.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSubject(sub.id, sub.name)}
+                        className="text-slate-400 hover:text-rose-600 transition"
+                        title={`حذف مادة ${sub.name}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  {subjects.length === 0 && (
+                    <span className="text-xs text-slate-400">لا توجد مواد مضافة بعد، اكتب اسم المادة أعلاه واضغط إضافة.</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 2. الجدول الأسبوعي التفاعلي (5 أيام × 5 خانات) */}
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900">جدول الحصص الأسبوعي (5 أيام × 5 حصص)</h2>
+                    <p className="text-xs text-slate-500">اختر الصف وانقر على أي خانة لتحديد اسم الحصة والمعلم فوراً</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-700">الصف والشعبة:</span>
                   <select
                     value={selectedClassId}
                     onChange={(e) => setSelectedClassId(e.target.value)}
-                    className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-800"
+                    className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-800 shadow-2xs"
                   >
                     {classes.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -872,91 +959,197 @@ export function ManagementDashboard({
                     ))}
                   </select>
                 </div>
+              </div>
 
-                <Button
-                  onClick={() => setSubjectsModal(true)}
-                  variant="outline"
-                  className="text-xs h-8 border-slate-300 gap-1.5"
-                >
-                  <BookMarked className="w-3.5 h-3.5 text-slate-700" />
-                  <span>إدارة المواد الدراسية</span>
-                </Button>
+              {/* شبكة الـ 5 أيام × 5 خانات */}
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-center border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-700 font-bold">
+                        <th className="p-3.5 border-l border-slate-200 w-24">الحصة</th>
+                        {daysList.map((day) => (
+                          <th key={day.id} className="p-3.5 border-l border-slate-200 last:border-l-0 min-w-[140px]">
+                            {day.name}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 text-xs">
+                      {periodsList.map((period) => (
+                        <tr key={period} className="hover:bg-slate-50/40">
+                          {/* رقم الحصة */}
+                          <td className="p-3 font-bold text-slate-700 bg-slate-50/70 border-l border-slate-200">
+                            الحصة {period}
+                          </td>
+
+                          {/* خانات الأيام الـ 5 */}
+                          {daysList.map((day) => {
+                            const entry = schedules.find(
+                              (s) =>
+                                s.classId === selectedClassId &&
+                                s.day === day.id &&
+                                s.period === period
+                            );
+
+                            return (
+                              <td
+                                key={day.id}
+                                className="p-2 border-l border-slate-200 last:border-l-0 align-middle"
+                              >
+                                {entry ? (
+                                  <div
+                                    onClick={() => openCellModal(day.id, period)}
+                                    className="group relative bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg p-2.5 cursor-pointer transition text-right shadow-2xs"
+                                    title="انقر لتعديل الحصة أو المادة"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-slate-900 text-xs">
+                                        {entry.subject}
+                                      </span>
+                                      <button
+                                        onClick={(e) => handleDeleteCell(day.id, period, e)}
+                                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition p-0.5"
+                                        title="حذف الحصة"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 mt-1 truncate">
+                                      {entry.teacherName || "بدون معلم محدد"}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => openCellModal(day.id, period)}
+                                    className="w-full min-h-[58px] rounded-lg border border-dashed border-slate-300 hover:border-slate-800 hover:bg-slate-50 text-slate-400 hover:text-slate-800 flex flex-col items-center justify-center gap-1 transition p-2 cursor-pointer"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span className="text-[11px] font-medium">تحديد مادة</span>
+                                  </button>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
-            {/* شبكة الجدول الأسبوعي: 5 أيام × 5 حصص */}
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-center border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-700 font-bold">
-                      <th className="p-3.5 border-l border-slate-200 w-24">الحصة</th>
-                      {daysList.map((day) => (
-                        <th key={day.id} className="p-3.5 border-l border-slate-200 last:border-l-0 min-w-[140px]">
-                          {day.name}
-                        </th>
-                      ))}
+            {/* 3. جدول أنصبة وتوزيع دروس المدرسين في الأسبوع (مطلب المدير) */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">جدول أنصبة وتوزيع دروس المدرسين (أسبوعياً)</h3>
+                    <p className="text-[11px] text-slate-500">حساب آلي لعدد الدروس والحصص لكل مدرس في الأسبوع عبر كافة الصفوف</p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+                  إجمالي الحصص الموزعة: {schedules.length} حصة
+                </span>
+              </div>
+
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold">
+                    <tr>
+                      <th className="p-3">اسم المدرس</th>
+                      <th className="p-3">المادة الدراسية</th>
+                      <th className="p-3">الهاتف والواتساب</th>
+                      <th className="p-3 text-center">مجموع الدروس بالأسبوع</th>
+                      <th className="p-3">الصفوف والشعب المجدولة</th>
+                      <th className="p-3 text-center">أحد</th>
+                      <th className="p-3 text-center">إثنين</th>
+                      <th className="p-3 text-center">ثلاثاء</th>
+                      <th className="p-3 text-center">أربعاء</th>
+                      <th className="p-3 text-center">خميس</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200 text-xs">
-                    {periodsList.map((period) => (
-                      <tr key={period} className="hover:bg-slate-50/40">
-                        {/* رقم الحصة */}
-                        <td className="p-3 font-bold text-slate-700 bg-slate-50/70 border-l border-slate-200">
-                          الحصة {period}
-                        </td>
+                  <tbody className="divide-y divide-slate-100">
+                    {teachers.map((teacher) => {
+                      // جلب حصص هذا المعلم من كل الصفوف
+                      const teacherLessons = schedules.filter((sc) => sc.teacherId === teacher.id);
+                      const totalCount = teacherLessons.length;
+                      
+                      // استخراج الصفوف الفريدة
+                      const uniqueClasses = Array.from(
+                        new Set(teacherLessons.map((sc) => sc.className))
+                      );
 
-                        {/* خلايا الأيام الـ 5 */}
-                        {daysList.map((day) => {
-                          const entry = schedules.find(
-                            (s) =>
-                              s.classId === selectedClassId &&
-                              s.day === day.id &&
-                              s.period === period
-                          );
+                      const day1Count = teacherLessons.filter((sc) => sc.day === 1).length;
+                      const day2Count = teacherLessons.filter((sc) => sc.day === 2).length;
+                      const day3Count = teacherLessons.filter((sc) => sc.day === 3).length;
+                      const day4Count = teacherLessons.filter((sc) => sc.day === 4).length;
+                      const day5Count = teacherLessons.filter((sc) => sc.day === 5).length;
 
-                          return (
-                            <td
-                              key={day.id}
-                              className="p-2 border-l border-slate-200 last:border-l-0 align-middle"
+                      return (
+                        <tr key={teacher.id} className="hover:bg-slate-50/70">
+                          <td className="p-3 font-bold text-slate-900">{teacher.name}</td>
+                          <td className="p-3 text-slate-700 font-medium">{teacher.subject}</td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-slate-600 text-[11px]" dir="ltr">
+                                {parseAndFormatPhone(teacher.phone).displayFormatted}
+                              </span>
+                              <button
+                                onClick={() => sendWhatsAppInvite(teacher)}
+                                className="text-emerald-600 hover:text-emerald-700 p-0.5 rounded hover:bg-emerald-50 transition"
+                                title="مراسلة المدرس عبر واتساب"
+                              >
+                                <Share2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span
+                              className={`inline-block px-2.5 py-0.5 rounded-full font-bold text-xs ${
+                                totalCount > 0
+                                  ? "bg-slate-900 text-white"
+                                  : "bg-slate-100 text-slate-400"
+                              }`}
                             >
-                              {entry ? (
-                                <div
-                                  onClick={() => openCellModal(day.id, period)}
-                                  className="group relative bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg p-2.5 cursor-pointer transition text-right shadow-2xs"
-                                  title="انقر لتعديل الحصة أو المادة"
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="font-bold text-slate-900 text-xs">
-                                      {entry.subject}
-                                    </span>
-                                    <button
-                                      onClick={(e) => handleDeleteCell(day.id, period, e)}
-                                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition p-0.5"
-                                      title="حذف الحصة"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                  <div className="text-[11px] text-slate-500 mt-1 truncate">
-                                    {entry.teacherName || "بدون معلم"}
-                                  </div>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => openCellModal(day.id, period)}
-                                  className="w-full min-h-[58px] rounded-lg border border-dashed border-slate-300 hover:border-slate-800 hover:bg-slate-50 text-slate-400 hover:text-slate-800 flex flex-col items-center justify-center gap-1 transition p-2 cursor-pointer"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                  <span className="text-[11px] font-medium">تحديد مادة</span>
-                                </button>
-                              )}
-                            </td>
-                          );
-                        })}
+                              {totalCount} {totalCount === 1 ? "حصة" : totalCount === 2 ? "حصتان" : "حصص"}
+                            </span>
+                          </td>
+                          <td className="p-3 text-slate-600">
+                            {uniqueClasses.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {uniqueClasses.map((cls, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-medium border border-slate-200"
+                                  >
+                                    {cls}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-[11px]">لم تسند له حصص بعد</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center font-semibold text-slate-700">{day1Count || "-"}</td>
+                          <td className="p-3 text-center font-semibold text-slate-700">{day2Count || "-"}</td>
+                          <td className="p-3 text-center font-semibold text-slate-700">{day3Count || "-"}</td>
+                          <td className="p-3 text-center font-semibold text-slate-700">{day4Count || "-"}</td>
+                          <td className="p-3 text-center font-semibold text-slate-700">{day5Count || "-"}</td>
+                        </tr>
+                      );
+                    })}
+                    {teachers.length === 0 && (
+                      <tr>
+                        <td colSpan={10} className="p-6 text-center text-slate-400">
+                          لا يوجد مدرسون مسجلون بعد لحساب أنصبتهم الأسبوعية.
+                        </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1275,75 +1468,7 @@ export function ManagementDashboard({
         </div>
       )}
 
-      {/* نافذة إدارة المواد الدراسية */}
-      {subjectsModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="font-bold text-sm text-slate-900">إدارة المواد الدراسية</h3>
-                <p className="text-xs text-slate-500">إضافة مواد جديدة لربطها بجدول الحصص الأسبوعي</p>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSubjectsModal(false)}
-                className="text-xs h-7"
-              >
-                إغلاق
-              </Button>
-            </div>
 
-            {subjectMsg && (
-              <div
-                className={`p-2.5 mb-3 rounded-lg text-xs flex items-center gap-2 ${
-                  subjectMsg.type === "success"
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    : "bg-rose-50 text-rose-700 border border-rose-200"
-                }`}
-              >
-                {subjectMsg.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
-                <span>{subjectMsg.text}</span>
-              </div>
-            )}
-
-            {/* نموذج إضافة مادة جديدة */}
-            <form onSubmit={handleAddSubject} className="flex gap-2 mb-4">
-              <input
-                type="text"
-                value={newSubjectName}
-                onChange={(e) => setNewSubjectName(e.target.value)}
-                placeholder="اكتب اسم المادة الجديدة (مثال: الفيزياء، الحاسوب...)"
-                required
-                className="flex-1 px-3 py-2 border rounded-lg border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-slate-800"
-              />
-              <Button
-                type="submit"
-                disabled={subjectLoading}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 shrink-0 gap-1"
-              >
-                {subjectLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                <span>إضافة مادة</span>
-              </Button>
-            </form>
-
-            {/* قائمة المواد المسجلة */}
-            <div className="border border-slate-200 rounded-lg p-3 max-h-60 overflow-y-auto space-y-1.5">
-              <span className="text-[11px] font-bold text-slate-500 block mb-2">المواد المتاحة في المدرسة:</span>
-              <div className="flex flex-wrap gap-1.5">
-                {subjects.map((sub) => (
-                  <span
-                    key={sub.id}
-                    className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200"
-                  >
-                    {sub.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* نافذة تحديد مادة ومعلم لخلية في الجدول */}
       {cellModal && activeCell && (

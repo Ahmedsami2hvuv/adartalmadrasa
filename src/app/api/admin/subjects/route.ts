@@ -127,3 +127,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const name = searchParams.get("name");
+
+    const adminSupabase = createAdminSupabaseClient();
+    if (id) {
+      await adminSupabase.from("subjects").delete().eq("id", id);
+    } else if (name) {
+      await adminSupabase.from("subjects").delete().eq("name", name);
+    } else {
+      return NextResponse.json({ error: "معرف المادة مطلوب." }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "حدث خطأ أثناء حذف المادة.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
