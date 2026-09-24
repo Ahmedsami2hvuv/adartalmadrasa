@@ -18,7 +18,7 @@ export interface StudentReportData {
     note: string;
     type: "positive" | "negative" | "neutral";
   }[];
-  installmentsStatus: string;
+  installmentsStatus?: string;
 }
 
 export function printStudentReport(data: StudentReportData) {
@@ -150,7 +150,6 @@ export function printStudentReport(data: StudentReportData) {
         <div class="info-item"><strong>الصف والشعبة:</strong> ${data.className}</div>
         <div class="info-item"><strong>تاريخ إصدار التقرير:</strong> ${data.date}</div>
         <div class="info-item"><strong>نسبة الحضور العام:</strong> ${data.attendanceRate}% (${data.totalAbsences} غيابات)</div>
-        <div class="info-item"><strong>حالة الأقساط:</strong> ${data.installmentsStatus}</div>
       </div>
 
       <h3>كشف الدرجات والتقييمات</h3>

@@ -86,7 +86,7 @@ export function ManagementDashboard({
   currentUserName?: string;
 }) {
   const [activeTab, setActiveTab] = useState<
-    "overview" | "teachers" | "classes" | "students" | "schedule" | "installments" | "settings"
+    "overview" | "teachers" | "classes" | "students" | "schedule" | "settings"
   >("overview");
 
   const [loadingData, setLoadingData] = useState(true);
@@ -645,7 +645,6 @@ export function ManagementDashboard({
             { id: "classes", label: `الصفوف والشعب (${classes.length})`, icon: BookOpen },
             { id: "students", label: `سجل الطلاب (${students.length})`, icon: School },
             { id: "schedule", label: "الجدول الأسبوعي", icon: Calendar },
-            { id: "installments", label: "الأقساط المدرسية", icon: CreditCard },
             { id: "settings", label: "الإعدادات والنظام", icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1409,22 +1408,6 @@ export function ManagementDashboard({
           </div>
         )}
 
-        {/* الأقساط */}
-        {activeTab === "installments" && (
-          <div className="space-y-4">
-            <h2 className="text-sm font-bold text-slate-900">سجل الأقساط والرسوم</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs text-slate-500 mb-1">المسددون بالكامل</div>
-                <div className="text-xl font-bold text-slate-900">{students.length > 0 ? students.length : 0} طالب</div>
-              </div>
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs text-slate-500 mb-1">متأخرات مستحقة</div>
-                <div className="text-xl font-bold text-slate-900">0 طالب</div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* الإعدادات وبوت تيليجرام */}
         {activeTab === "settings" && (
