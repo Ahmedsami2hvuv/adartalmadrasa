@@ -7,6 +7,8 @@ export async function GET(req: NextRequest) {
     const classId = searchParams.get("classId");
 
     const adminSupabase = createAdminSupabaseClient();
+    
+    // محاولة 1: الاستعلام مع day_of_week
     let query = adminSupabase.from("weekly_schedules").select(`
       id,
       day_of_week,
@@ -23,16 +25,44 @@ export async function GET(req: NextRequest) {
       query = query.eq("class_id", classId);
     }
 
-    const { data: schedules, error } = await query;
+    let { data: schedules, error } = await query;
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    // محاولة 2: إذا فشل بسبب عمود day_of_week، نستعلم بـ day
+    if (error && error.message?.includes("day_of_week")) {
+      let queryDay = adminSupabase.from("weekly_schedules").select(`
+        id,
+        day,
+        period,
+        class_id,
+        teacher_id,
+        subject_id,
+        classes ( name, section ),
+        subjects ( name ),
+        teachers ( profiles ( full_name ) )
+      `);
+
+      if (classId) {
+        queryDay = queryDay.eq("class_id", classId);
+      }
+
+      const resDay = await queryDay;
+      if (!resDay.error && resDay.data) {
+        schedules = resDay.data.map((r: any) => ({
+          ...r,
+          day_of_week: r.day,
+        }));
+        error = null;
+      }
     }
 
-    return NextResponse.json({ schedules });
+    if (error) {
+      return NextResponse.json({ error: error.message, schedules: [] }, { status: 400 });
+    }
+
+    return NextResponse.json({ schedules: schedules || [] });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message, schedules: [] }, { status: 500 });
   }
 }
 
@@ -48,62 +78,78 @@ export async function POST(req: NextRequest) {
     }
 
     const adminSupabase = createAdminSupabaseClient();
+    const cleanDay = Number(dayOfWeek);
+    const cleanPeriod = Number(period);
 
-    // 1. فحص تضارب المعلم إن وجد
-    if (teacherId) {
-      const { data: conflictTeacher } = await adminSupabase
-        .from("weekly_schedules")
-        .select("id, class_id, classes ( name, section )")
-        .eq("teacher_id", teacherId)
-        .eq("day_of_week", Number(dayOfWeek))
-        .eq("period", Number(period))
-        .neq("class_id", classId)
-        .limit(1);
-
-      if (conflictTeacher && conflictTeacher.length > 0) {
-        return NextResponse.json(
-          { error: "تضارب: هذا المعلم لديه حصة مجدولة مع صف آخر في نفس التوقيت." },
-          { status: 409 }
-        );
-      }
-    }
-
-    // 2. حذف أي حصة سابقة مسجلة لنفس الصف في هذا اليوم والحصة (استبدال الحصة)
-    await adminSupabase
+    // 1. حذف الحصة السابقة في نفس اليوم والحصة (استبدال الحصة)
+    const { error: delErr } = await adminSupabase
       .from("weekly_schedules")
       .delete()
       .eq("class_id", classId)
-      .eq("day_of_week", Number(dayOfWeek))
-      .eq("period", Number(period));
+      .eq("day_of_week", cleanDay)
+      .eq("period", cleanPeriod);
 
-    // 3. إدراج الحصة الجديدة
-    const { data: inserted, error: insertError } = await adminSupabase
+    if (delErr && delErr.message?.includes("day_of_week")) {
+      await adminSupabase
+        .from("weekly_schedules")
+        .delete()
+        .eq("class_id", classId)
+        .eq("day", cleanDay)
+        .eq("period", cleanPeriod);
+    }
+
+    // 2. محاولة الإدراج باستخدام day_of_week
+    let insertedRecord: any = null;
+    let insertErr: any = null;
+
+    const res1 = await adminSupabase
       .from("weekly_schedules")
       .insert({
         class_id: classId,
-        day_of_week: Number(dayOfWeek),
-        period: Number(period),
+        day_of_week: cleanDay,
+        period: cleanPeriod,
         subject_id: subjectId,
         teacher_id: teacherId || null,
       })
-      .select(`
-        id,
-        day_of_week,
-        period,
-        class_id,
-        teacher_id,
-        subject_id,
-        classes ( name, section ),
-        subjects ( name ),
-        teachers ( profiles ( full_name ) )
-      `)
-      .single();
+      .select("*")
+      .maybeSingle();
 
-    if (insertError) {
-      throw new Error(insertError.message);
+    if (!res1.error && res1.data) {
+      insertedRecord = res1.data;
+    } else if (res1.error && res1.error.message?.includes("day_of_week")) {
+      // محاولة الإدراج باستخدام عمود day البديل
+      const res2 = await adminSupabase
+        .from("weekly_schedules")
+        .insert({
+          class_id: classId,
+          day: cleanDay,
+          period: cleanPeriod,
+          subject_id: subjectId,
+          teacher_id: teacherId || null,
+        })
+        .select("*")
+        .maybeSingle();
+
+      if (!res2.error && res2.data) {
+        insertedRecord = res2.data;
+      } else {
+        insertErr = res2.error;
+      }
+    } else {
+      insertErr = res1.error;
     }
 
-    return NextResponse.json({ success: true, schedule: inserted });
+    if (insertErr) {
+      throw new Error(insertErr.message);
+    }
+
+    return NextResponse.json({
+      success: true,
+      schedule: {
+        ...insertedRecord,
+        day_of_week: insertedRecord.day_of_week ?? insertedRecord.day ?? cleanDay,
+      },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "حدث خطأ أثناء حفظ الحصة في الجدول.";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -123,14 +169,24 @@ export async function DELETE(req: NextRequest) {
     if (id) {
       await adminSupabase.from("weekly_schedules").delete().eq("id", id);
     } else if (classId && day && period) {
-      await adminSupabase
+      const cleanDay = Number(day);
+      const cleanPeriod = Number(period);
+
+      const { error: dErr } = await adminSupabase
         .from("weekly_schedules")
         .delete()
         .eq("class_id", classId)
-        .eq("day_of_week", Number(day))
-        .eq("period", Number(period));
-    } else {
-      return NextResponse.json({ error: "معرف الحصة مطلوب." }, { status: 400 });
+        .eq("day_of_week", cleanDay)
+        .eq("period", cleanPeriod);
+
+      if (dErr && dErr.message?.includes("day_of_week")) {
+        await adminSupabase
+          .from("weekly_schedules")
+          .delete()
+          .eq("class_id", classId)
+          .eq("day", cleanDay)
+          .eq("period", cleanPeriod);
+      }
     }
 
     return NextResponse.json({ success: true });

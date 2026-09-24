@@ -232,36 +232,13 @@ export function ManagementDashboard({
         console.warn("Subjects fetch fallback:", e);
       }
 
-      // 6. الجدول الأسبوعي
-      const { data: dbSchedules } = await supabase
-        .from("weekly_schedules")
-        .select(`
-          id,
-          day_of_week,
-          period,
-          class_id,
-          teacher_id,
-          subject_id,
-          classes ( name, section ),
-          subjects ( name ),
-          teachers ( profiles ( full_name ) )
-        `);
-
-      if (dbSchedules && dbSchedules.length > 0) {
-        setSchedules(
-          dbSchedules.map((sc: unknown) => {
-            const row = sc as {
-              id: string;
-              day_of_week: number;
-              period: number;
-              class_id: string;
-              teacher_id: string;
-              subject_id?: string;
-              classes?: { name: string; section: string };
-              subjects?: { name: string };
-              teachers?: { profiles?: { full_name: string } };
-            };
-            return {
+      // 6. الجدول الأسبوعي (جلب مباشر عبر السيرفر الذكي)
+      try {
+        const schRes = await fetch("/api/admin/schedules");
+        const schData = await schRes.json();
+        if (schData.schedules && Array.isArray(schData.schedules)) {
+          setSchedules(
+            schData.schedules.map((row: any) => ({
               id: row.id,
               classId: row.class_id,
               className: row.classes ? `${row.classes.name} (${row.classes.section})` : "صف",
@@ -269,11 +246,13 @@ export function ManagementDashboard({
               teacherName: row.teachers?.profiles?.full_name || "معلم",
               subjectId: row.subject_id,
               subject: row.subjects?.name || "مادة",
-              day: row.day_of_week,
+              day: row.day_of_week ?? row.day,
               period: row.period,
-            };
-          })
-        );
+            }))
+          );
+        }
+      } catch (schErr) {
+        console.warn("Schedules API fetch fallback:", schErr);
       }
     } catch (err) {
       console.warn("Fetch data from Supabase fallback:", err);

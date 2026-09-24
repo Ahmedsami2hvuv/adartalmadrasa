@@ -86,37 +86,47 @@ export async function POST(req: NextRequest) {
     const serverSupabase = createServerSupabaseClient();
 
     let teacherProfileId = crypto.randomUUID();
-    let profileSaved = false;
 
-    // 1. محاولة الإدخال في profiles عبر adminSupabase
-    const { error: adminProfErr } = await adminSupabase.from("profiles").upsert({
-      id: teacherProfileId,
-      role: "teacher",
-      full_name: name.trim(),
-      phone: storedPhone,
-      password: teacherPassword,
-      is_active: true,
-    });
+    // أ) محاولة إنشاء المستخدم أولاً في auth.users لتلبية أي قيد Foreign Key إن وجد
+    try {
+      const email = `teacher_${cleanPhoneDigits}_${Date.now().toString().slice(-4)}@adartalmadrasa.com`;
+      const { data: authUser, error: authErr } = await adminSupabase.auth.admin.createUser({
+        email: email,
+        password: teacherPassword,
+        email_confirm: true,
+        user_metadata: { role: "teacher", full_name: name.trim() },
+      });
 
-    if (!adminProfErr) {
-      profileSaved = true;
-    } else {
-      console.warn("adminSupabase profiles error:", adminProfErr.message);
-      // تجربة serverSupabase
-      const { error: serverProfErr } = await serverSupabase.from("profiles").upsert({
+      if (!authErr && authUser?.user) {
+        teacherProfileId = authUser.user.id;
+      }
+    } catch (authException) {
+      console.warn("auth.admin.createUser skipped or failed:", authException);
+    }
+
+    // ب) محاولة الإدخال في profiles (بالحقول الكاملة أولاً، ثم الأساسية فقط)
+    let pErr = (
+      await adminSupabase.from("profiles").upsert({
         id: teacherProfileId,
         role: "teacher",
         full_name: name.trim(),
         phone: storedPhone,
         password: teacherPassword,
         is_active: true,
-      });
+      })
+    ).error;
 
-      if (!serverProfErr) {
-        profileSaved = true;
-      } else {
-        console.warn("serverSupabase profiles error:", serverProfErr.message);
-      }
+    if (pErr) {
+      console.warn("Retrying profiles upsert without extra columns:", pErr.message);
+      // إدخال بالحقول الأساسية فقط الموجودة في أي مخطط
+      pErr = (
+        await adminSupabase.from("profiles").upsert({
+          id: teacherProfileId,
+          role: "teacher",
+          full_name: name.trim(),
+          phone: storedPhone,
+        })
+      ).error;
     }
 
     // 2. إدخال سجل المعلم في جدول teachers بمرونة فائقة

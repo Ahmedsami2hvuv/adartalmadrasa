@@ -55,30 +55,45 @@ export async function POST(req: NextRequest) {
     const parsedParentPhone = parseAndFormatPhone(parentPhone || "");
     const storedParentPhone = parsedParentPhone.whatsappNumber ? `+${parsedParentPhone.whatsappNumber}` : parentPhone || null;
 
-    // 2. إدخال ولي الأمر مباشرة في profiles
+    // 2. إدخال ولي الأمر
     let parentProfileId = crypto.randomUUID();
     let parentRecordId: string | null = null;
 
     try {
-      const { error: pProfErr } = await adminSupabase.from("profiles").insert({
-        id: parentProfileId,
-        role: "parent",
-        full_name: (parentName || "ولي أمر").trim(),
-        phone: storedParentPhone,
-        password: defaultPassword,
-        is_active: true,
-      });
+      // محاولة إنشاء حساب في auth.users لضمان تلبية القيد إن وجد
+      try {
+        const pEmail = `parent_${Date.now()}_${Math.floor(Math.random() * 10000)}@adartalmadrasa.com`;
+        const { data: pAuth } = await adminSupabase.auth.admin.createUser({
+          email: pEmail,
+          password: defaultPassword,
+          email_confirm: true,
+          user_metadata: { role: "parent", full_name: (parentName || "ولي أمر").trim() },
+        });
+        if (pAuth?.user) parentProfileId = pAuth.user.id;
+      } catch (e) {
+        console.warn("Parent auth createUser skipped:", e);
+      }
 
-      if (pProfErr) {
-        // تجربة عبر عميل السيرفر
-        await serverSupabase.from("profiles").insert({
+      let pErr = (
+        await adminSupabase.from("profiles").upsert({
           id: parentProfileId,
           role: "parent",
           full_name: (parentName || "ولي أمر").trim(),
           phone: storedParentPhone,
           password: defaultPassword,
           is_active: true,
-        });
+        })
+      ).error;
+
+      if (pErr) {
+        pErr = (
+          await adminSupabase.from("profiles").upsert({
+            id: parentProfileId,
+            role: "parent",
+            full_name: (parentName || "ولي أمر").trim(),
+            phone: storedParentPhone,
+          })
+        ).error;
       }
 
       const { data: parentRec } = await adminSupabase
@@ -92,26 +107,41 @@ export async function POST(req: NextRequest) {
       console.warn("Parent insert error:", e);
     }
 
-    // 3. إدخال الطالب مباشرة في profiles
-    const studentProfileId = crypto.randomUUID();
+    // 3. إدخال الطالب
+    let studentProfileId = crypto.randomUUID();
 
     try {
-      const { error: sProfErr } = await adminSupabase.from("profiles").insert({
-        id: studentProfileId,
-        role: "student",
-        full_name: name.trim(),
-        password: defaultPassword,
-        is_active: true,
-      });
+      try {
+        const sEmail = `student_${Date.now()}_${Math.floor(Math.random() * 10000)}@adartalmadrasa.com`;
+        const { data: sAuth } = await adminSupabase.auth.admin.createUser({
+          email: sEmail,
+          password: defaultPassword,
+          email_confirm: true,
+          user_metadata: { role: "student", full_name: name.trim() },
+        });
+        if (sAuth?.user) studentProfileId = sAuth.user.id;
+      } catch (e) {
+        console.warn("Student auth createUser skipped:", e);
+      }
 
-      if (sProfErr) {
-        await serverSupabase.from("profiles").insert({
+      let sErr = (
+        await adminSupabase.from("profiles").upsert({
           id: studentProfileId,
           role: "student",
           full_name: name.trim(),
           password: defaultPassword,
           is_active: true,
-        });
+        })
+      ).error;
+
+      if (sErr) {
+        sErr = (
+          await adminSupabase.from("profiles").upsert({
+            id: studentProfileId,
+            role: "student",
+            full_name: name.trim(),
+          })
+        ).error;
       }
     } catch (e) {
       console.warn("Student profile insert error:", e);
