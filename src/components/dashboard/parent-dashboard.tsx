@@ -4,17 +4,14 @@ import React, { useState } from "react";
 import {
   Users,
   CheckCircle,
-  XCircle,
   CreditCard,
   Calendar,
   FileDown,
   Clock,
   Plus,
-  ShieldCheck,
-  AlertTriangle,
+  School,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InstallPWA } from "@/components/install-pwa";
 import { LogoutButton } from "@/components/logout-button";
 import { printStudentReport } from "@/lib/pdf-report";
@@ -26,7 +23,6 @@ interface Child {
   qrCode: string;
   attendanceRate: number;
   totalAbsences: number;
-  recentAbsenceDate: string | null;
   installments: {
     total: number;
     paid: number;
@@ -52,10 +48,9 @@ interface Appointment {
   status: "pending" | "approved" | "rejected";
 }
 
-export function ParentDashboard() {
+export function ParentDashboard({ currentUserName }: { currentUserName?: string }) {
   const [activeTab, setActiveTab] = useState<"children" | "installments" | "appointments">("children");
 
-  // بيانات أبناء ولي الأمر
   const [children] = useState<Child[]>([
     {
       id: "c1",
@@ -64,7 +59,6 @@ export function ParentDashboard() {
       qrCode: "STU-2025-01",
       attendanceRate: 96,
       totalAbsences: 2,
-      recentAbsenceDate: "2026-09-14 (حصة واحدة)",
       installments: {
         total: 1500000,
         paid: 1000000,
@@ -86,7 +80,6 @@ export function ParentDashboard() {
       qrCode: "STU-2025-44",
       attendanceRate: 100,
       totalAbsences: 0,
-      recentAbsenceDate: null,
       installments: {
         total: 1200000,
         paid: 1200000,
@@ -105,45 +98,43 @@ export function ParentDashboard() {
   const [selectedChildIndex, setSelectedChildIndex] = useState(0);
   const activeChild = children[selectedChildIndex];
 
-  // مواعيد ولي الأمر
   const [appointments, setAppointments] = useState<Appointment[]>([
     {
       id: "a1",
       teacherName: "إدارة المدرسة / المرشد التربوي",
       date: "2026-09-29",
-      time: "10:30 صباحاً",
-      reason: "مناقشة المستوى الدراسي والأنشطة الإثرائية",
+      time: "10:30 ص",
+      reason: "متابعة المستوى الدراسي والأنشطة",
       status: "approved",
     },
   ]);
 
   const [appointmentModal, setAppointmentModal] = useState(false);
   const [newAppointmentData, setNewAppointmentData] = useState({
-    teacherName: "معلم مادة الرياضيات (أ. سارة الخالد)",
+    teacherName: "معلم مادة الرياضيات",
     date: "",
-    time: "11:00 صباحاً",
+    time: "11:00 ص",
     reason: "",
   });
 
-  // توليد تقرير PDF فوري للابن
   const handlePrintReport = (child: Child) => {
     printStudentReport({
       studentName: child.name,
       className: child.className,
       academicYear: "2025-2026",
-      schoolName: "المدرسة الذكية النموذجية الأهلية",
+      schoolName: "إدارة المدرسة",
       date: new Date().toLocaleDateString("ar-EG"),
       attendanceRate: child.attendanceRate,
       totalAbsences: child.totalAbsences,
       installmentsStatus:
         child.installments.status === "paid"
-          ? "مسدد بالكامل"
+          ? "مسدد كلياً"
           : child.installments.status === "partial"
           ? `مسدد جزئياً (المتبقي: ${child.installments.remaining.toLocaleString()} د.ع)`
           : "غير مسدد",
       grades: child.grades,
       behaviorNotes: [
-        { date: "2026-09-20", note: "طالب منضبط ومواظب، أخلاق متميزة وتفاعل إيجابي مستمر", type: "positive" },
+        { date: "2026-09-20", note: "التزام كامل بالمواظبة والواجبات", type: "positive" },
       ],
     });
   };
@@ -163,231 +154,198 @@ export function ParentDashboard() {
       },
     ]);
     setNewAppointmentData({
-      teacherName: "معلم مادة الرياضيات (أ. سارة الخالد)",
+      teacherName: "معلم مادة الرياضيات",
       date: "",
-      time: "11:00 صباحاً",
+      time: "11:00 ص",
       reason: "",
     });
     setAppointmentModal(false);
-    alert("تم إرسال طلب الموعد بنجاح، ستتلقى إشعاراً عند تأكيد إدارة المدرسة.");
+    alert("تم تسجيل طلب الموعد وإرساله للمراجعة.");
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 selection:bg-blue-600 selection:text-white pb-12" dir="rtl">
+    <div className="min-h-screen bg-slate-100 flex flex-col selection:bg-slate-800 selection:text-white pb-10" dir="rtl">
       {/* الرأس */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-15 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-md shadow-purple-500/20">
-              <Users className="w-6 h-6" />
+            <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold">
+              <School className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-slate-900 leading-tight">بوابة ولي الأمر الذكية</h1>
-              <p className="text-xs text-slate-500">أبو زيد طارق • متابعة الأبناء الأكاديمية والمالية</p>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-bold text-slate-900">بوابة ولي الأمر</h1>
+                <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                  {currentUserName || "ولي الأمر"}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">متابعة السجل الأكاديمي والمالي للأبناء</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2">
             <InstallPWA variant="badge" />
             <LogoutButton />
           </div>
         </div>
 
-        {/* شريط التبويبات */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex overflow-x-auto gap-1 border-t border-slate-100 py-1.5 scrollbar-none">
-          <button
-            onClick={() => setActiveTab("children")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
-              activeTab === "children" ? "bg-purple-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>متابعة الأبناء ({children.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("installments")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
-              activeTab === "installments" ? "bg-purple-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <CreditCard className="w-3.5 h-3.5" />
-            <span>الأقساط المدرسية</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("appointments")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
-              activeTab === "appointments" ? "bg-purple-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5" />
-            <span>حجز موعد مع المدرسة</span>
-          </button>
+        {/* التبويبات */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-1 border-t border-slate-100 py-1 scrollbar-none">
+          {[
+            { id: "children", label: `الأبناء (${children.length})`, icon: Users },
+            { id: "installments", label: "الأقساط المدرسية", icon: CreditCard },
+            { id: "appointments", label: "المواعيد والمقابلات", icon: Calendar },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition whitespace-nowrap ${
+                  isActive
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
       </header>
 
       {/* المحتوى */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 w-full mt-6 flex-1">
         {/* اختيار الابن */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-4">
           {children.map((ch, idx) => (
             <button
               key={ch.id}
               onClick={() => setSelectedChildIndex(idx)}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 ${
+              className={`px-3 py-1.5 rounded text-xs font-semibold border transition ${
                 selectedChildIndex === idx
-                  ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
-                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
               }`}
             >
-              <span>{ch.name}</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] ${
-                selectedChildIndex === idx ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-              }`}>
-                {ch.className}
-              </span>
+              {ch.name} ({ch.className})
             </button>
           ))}
         </div>
 
-        {/* تبويب متابعة الأبناء والتقرير الأسبوعي */}
+        {/* متابعة الابن والتقرير */}
         {activeTab === "children" && (
-          <div className="space-y-6">
-            {/* بطاقة متابعة الحضور الفوري والغياب */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-xs text-slate-500">حالة الحضور اللحظية اليوم</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-2 text-emerald-600 font-bold text-lg">
-                    <CheckCircle className="w-5 h-5" />
-                    <span>حاضر ومسجل في المدرسة</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1">تم المسح الذكي لرمز الحضور في الحصة الأولى</p>
-                </CardContent>
-              </Card>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="bg-white border border-slate-200 rounded-lg p-4">
+                <div className="text-xs text-slate-500 mb-1">حالة الحضور اليوم</div>
+                <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-sm">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>حاضر في المدرسة</span>
+                </div>
+              </div>
 
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-xs text-slate-500">نسبة الانضباط والغياب</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-slate-900">{activeChild.attendanceRate}%</div>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    إجمالي الغيابات: {activeChild.totalAbsences} غياب
-                  </p>
-                </CardContent>
-              </Card>
+              <div className="bg-white border border-slate-200 rounded-lg p-4">
+                <div className="text-xs text-slate-500 mb-1">نسبة الحضور التراكمية</div>
+                <div className="text-xl font-bold text-slate-900">{activeChild.attendanceRate}%</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">الغياب المسجل: {activeChild.totalAbsences}</div>
+              </div>
 
-              <Card className="flex flex-col justify-between">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-xs text-slate-500">تقرير أسبوعي تلقائي</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Button
-                    onClick={() => handlePrintReport(activeChild)}
-                    className="w-full bg-purple-600 hover:bg-purple-700 text-xs font-bold shadow-sm"
-                  >
-                    <FileDown className="w-4 h-4 ml-1.5" />
-                    تنزيل كشف الدرجات PDF
-                  </Button>
-                </CardContent>
-              </Card>
+              <div className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-slate-500 mb-0.5">كشف الدرجات الأكاديمي</div>
+                  <div className="text-xs text-slate-700 font-semibold">جاهز للطباعة والتنزيل</div>
+                </div>
+                <Button
+                  onClick={() => handlePrintReport(activeChild)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8"
+                >
+                  <FileDown className="w-3.5 h-3.5 ml-1.5" />
+                  تحميل PDF
+                </Button>
+              </div>
             </div>
 
-            {/* درجات الابن */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-              <h3 className="font-bold text-sm text-slate-800 mb-4">التقييمات والدرجات المحدثة لحظياً</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-slate-50 border-b text-slate-600">
-                    <tr>
-                      <th className="p-3">المادة</th>
-                      <th className="p-3">التقييم اليومي (20)</th>
-                      <th className="p-3">الامتحان الشهري (30)</th>
-                      <th className="p-3">الامتحان النهائي (50)</th>
-                      <th className="p-3 font-bold">المجموع (100)</th>
-                      <th className="p-3">التقدير</th>
+            {/* الدرجات */}
+            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
+                  <tr>
+                    <th className="p-3">المادة</th>
+                    <th className="p-3">يومي (20)</th>
+                    <th className="p-3">شهري (30)</th>
+                    <th className="p-3">نهائي (50)</th>
+                    <th className="p-3">المجموع (100)</th>
+                    <th className="p-3">التقدير</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {activeChild.grades.map((g, i) => (
+                    <tr key={i} className="hover:bg-slate-50/60">
+                      <td className="p-3 font-semibold text-slate-900">{g.subject}</td>
+                      <td className="p-3 text-slate-600">{g.daily}</td>
+                      <td className="p-3 text-slate-600">{g.monthly}</td>
+                      <td className="p-3 text-slate-600">{g.final}</td>
+                      <td className="p-3 font-bold text-slate-900">{g.total}</td>
+                      <td className="p-3 font-semibold text-slate-700">ممتاز</td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {activeChild.grades.map((g, i) => (
-                      <tr key={i}>
-                        <td className="p-3 font-bold text-slate-800">{g.subject}</td>
-                        <td className="p-3 text-slate-600">{g.daily}</td>
-                        <td className="p-3 text-slate-600">{g.monthly}</td>
-                        <td className="p-3 text-slate-600">{g.final}</td>
-                        <td className="p-3 font-bold text-purple-700">{g.total}</td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                            ممتاز
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
 
-        {/* تبويب الأقساط */}
+        {/* الأقساط */}
         {activeTab === "installments" && (
-          <div className="space-y-4 max-w-2xl bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h2 className="text-lg font-bold text-slate-900">سجل الرسوم والأقساط الدراسية</h2>
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
+          <div className="bg-white border border-slate-200 rounded-lg p-5 max-w-lg space-y-3 text-xs">
+            <h2 className="text-sm font-bold text-slate-900">بيانات الأقساط المدرسية ({activeChild.name})</h2>
+            <div className="p-3 bg-slate-50 rounded border border-slate-200 space-y-2">
               <div className="flex justify-between">
-                <span className="text-slate-600">القسط السنوي الإجمالي:</span>
-                <span className="font-bold text-slate-800">{activeChild.installments.total.toLocaleString()} د.ع</span>
+                <span className="text-slate-600">المبلغ الإجمالي السنوي:</span>
+                <span className="font-semibold text-slate-900">{activeChild.installments.total.toLocaleString()} د.ع</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-600">المبلغ المسدد:</span>
-                <span className="font-bold text-emerald-600">{activeChild.installments.paid.toLocaleString()} د.ع</span>
+                <span className="text-slate-600">المدفوع:</span>
+                <span className="font-semibold text-emerald-700">{activeChild.installments.paid.toLocaleString()} د.ع</span>
               </div>
-              <div className="flex justify-between border-t border-slate-200 pt-2 font-bold">
-                <span className="text-slate-800">المبلغ المتبقي:</span>
-                <span className="text-purple-700">{activeChild.installments.remaining.toLocaleString()} د.ع</span>
-              </div>
-              <div className="flex justify-between text-[11px] text-slate-500 pt-1">
-                <span>تاريخ استحقاق الدفعة القادمة:</span>
-                <span>{activeChild.installments.nextDueDate}</span>
+              <div className="flex justify-between border-t border-slate-200 pt-1.5 font-bold">
+                <span className="text-slate-900">المتبقي:</span>
+                <span className="text-slate-900">{activeChild.installments.remaining.toLocaleString()} د.ع</span>
               </div>
             </div>
           </div>
         )}
 
-        {/* تبويب حجز المواعيد */}
+        {/* المواعيد */}
         {activeTab === "appointments" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">حجز موعد مع إدارة المدرسة أو المعلمين</h2>
-                <p className="text-xs text-slate-500">تحديد موعد مسبق للمناقشة والاستفسار دون انتظار</p>
+                <h2 className="text-sm font-bold text-slate-900">جدول المقابلات والمواعيد</h2>
+                <p className="text-xs text-slate-500">حجز موعد مسبق مع إدارة المدرسة أو المعلم</p>
               </div>
-              <Button onClick={() => setAppointmentModal(true)} className="bg-purple-600 hover:bg-purple-700">
-                <Plus className="w-4 h-4 ml-1.5" />
-                حجز موعد جديد
+              <Button
+                onClick={() => setAppointmentModal(true)}
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
+              >
+                <Plus className="w-3.5 h-3.5 ml-1.5" />
+                حجز موعد
               </Button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               {appointments.map((app) => (
-                <div key={app.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div key={app.id} className="bg-white border border-slate-200 rounded-lg p-3 text-xs flex justify-between items-center">
                   <div>
-                    <h4 className="font-bold text-sm text-slate-800">{app.teacherName}</h4>
-                    <p className="text-xs text-slate-600 mt-1">{app.reason}</p>
-                    <div className="text-[11px] text-slate-400 mt-2 flex items-center gap-2">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>{app.date} • الساعة {app.time}</span>
-                    </div>
+                    <div className="font-semibold text-slate-900">{app.teacherName}</div>
+                    <div className="text-slate-600 mt-0.5">{app.reason}</div>
+                    <div className="text-slate-400 text-[11px] mt-1">{app.date} • {app.time}</div>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                    app.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                  }`}>
-                    {app.status === "approved" ? "موعد مؤكد" : "قيد المعالجة"}
+                  <span className="font-semibold text-slate-800">
+                    {app.status === "approved" ? "مؤكد" : "قيد المراجعة"}
                   </span>
                 </div>
               ))}
@@ -398,64 +356,58 @@ export function ParentDashboard() {
 
       {/* نافذة حجز موعد */}
       {appointmentModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
-            <h3 className="font-bold text-base text-slate-900 mb-4">حجز موعد مقابلة</h3>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-sm p-5 shadow-lg">
+            <h3 className="font-bold text-sm text-slate-900 mb-3">حجز موعد مقابلة</h3>
             <form onSubmit={handleBookAppointment} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 font-medium mb-1">الجهة المطلوب مقابلتها:</label>
+                <label className="block text-slate-700 mb-1">الجهة المطلوبة:</label>
                 <select
                   value={newAppointmentData.teacherName}
                   onChange={(e) => setNewAppointmentData({ ...newAppointmentData, teacherName: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl"
+                  className="w-full px-2.5 py-1.5 border rounded border-slate-300"
                 >
-                  <option value="معلم مادة الرياضيات (أ. سارة الخالد)">معلم مادة الرياضيات (أ. سارة الخالد)</option>
-                  <option value="معلم مادة اللغة العربية (أ. علي الكرخي)">معلم مادة اللغة العربية (أ. علي الكرخي)</option>
+                  <option value="معلم مادة الرياضيات">معلم مادة الرياضيات</option>
+                  <option value="معلم مادة اللغة العربية">معلم مادة اللغة العربية</option>
                   <option value="إدارة المدرسة / المرشد التربوي">إدارة المدرسة / المرشد التربوي</option>
                   <option value="المدير العام">المدير العام</option>
                 </select>
               </div>
-
               <div>
-                <label className="block text-slate-700 font-medium mb-1">التاريخ المفضل:</label>
+                <label className="block text-slate-700 mb-1">التاريخ المطلوب:</label>
                 <input
                   type="date"
                   required
                   value={newAppointmentData.date}
                   onChange={(e) => setNewAppointmentData({ ...newAppointmentData, date: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl"
+                  className="w-full px-2.5 py-1.5 border rounded border-slate-300"
                 />
               </div>
-
               <div>
-                <label className="block text-slate-700 font-medium mb-1">الوقت المفضل:</label>
+                <label className="block text-slate-700 mb-1">الوقت المفضل:</label>
                 <select
                   value={newAppointmentData.time}
                   onChange={(e) => setNewAppointmentData({ ...newAppointmentData, time: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl"
+                  className="w-full px-2.5 py-1.5 border rounded border-slate-300"
                 >
-                  <option value="9:30 صباحاً">9:30 صباحاً</option>
-                  <option value="10:30 صباحاً">10:30 صباحاً</option>
-                  <option value="11:30 صباحاً">11:30 صباحاً</option>
-                  <option value="12:30 ظهراً">12:30 ظهراً</option>
+                  <option value="9:30 ص">9:30 ص</option>
+                  <option value="10:30 ص">10:30 ص</option>
+                  <option value="11:30 ص">11:30 ص</option>
                 </select>
               </div>
-
               <div>
-                <label className="block text-slate-700 font-medium mb-1">سبب طلب الموعد أو الاستفسار:</label>
+                <label className="block text-slate-700 mb-1">موضوع الاستفسار:</label>
                 <textarea
                   required
                   rows={3}
                   value={newAppointmentData.reason}
                   onChange={(e) => setNewAppointmentData({ ...newAppointmentData, reason: e.target.value })}
-                  placeholder="اكتب بإيجاز موضوع المقابلة..."
-                  className="w-full px-3 py-2 border rounded-xl"
+                  className="w-full px-2.5 py-1.5 border rounded border-slate-300"
                 />
               </div>
-
-              <div className="flex justify-end gap-2 pt-4">
-                <Button type="button" variant="ghost" onClick={() => setAppointmentModal(false)}>إلغاء</Button>
-                <Button type="submit" className="bg-purple-600 hover:bg-purple-700">تأكيد الحجز</Button>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="ghost" onClick={() => setAppointmentModal(false)} className="text-xs h-8">إلغاء</Button>
+                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">تأكيد الطلب</Button>
               </div>
             </form>
           </div>

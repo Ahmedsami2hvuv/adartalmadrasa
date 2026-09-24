@@ -1,20 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  GraduationCap,
-  Shield,
-  UserCheck,
-  BookOpen,
-  Users,
-  Lock,
-  Mail,
-  ArrowRight,
-  Sparkles,
-  AlertCircle,
-} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { Lock, Mail, AlertCircle, School } from "lucide-react";
+import { InstallPWA } from "@/components/install-pwa";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,8 +12,28 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
-  const handleSupabaseLogin = async (e: React.FormEvent) => {
+  // التحقق إن كان المستخدم مسجل دخول مسبقاً في سوبابيس
+  useEffect(() => {
+    async function verifySession() {
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          router.replace("/dashboard");
+          return;
+        }
+      } catch (e) {
+        console.error("Auth check error:", e);
+      } finally {
+        setCheckingAuth(false);
+      }
+    }
+    verifySession();
+  }, [router]);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg("");
@@ -31,97 +41,114 @@ export default function LoginPage() {
     try {
       const supabase = createClient();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: email.trim(),
+        password: password,
       });
 
       if (error) {
+        if (error.message.includes("Invalid login credentials")) {
+          throw new Error("البريد الإلكتروني أو كلمة المرور غير صحيحة.");
+        }
         throw error;
       }
 
       if (data?.user) {
-        // فحص دور المستخدم من profiles
-        const { data: profile } = await supabase
+        // التحقق من الملف الشخصي في قاعدة البيانات
+        const { data: profile, error: profileErr } = await supabase
           .from("profiles")
-          .select("role")
+          .select("role, is_active, full_name")
           .eq("id", data.user.id)
           .single();
 
-        const role = profile?.role || "student";
-        localStorage.setItem(
-          "demo_user",
-          JSON.stringify({
-            id: data.user.id,
-            email: data.user.email,
-            role: role,
-            name: data.user.user_metadata?.full_name || "مستخدم",
-          })
-        );
-        router.push("/dashboard");
+        if (profileErr || !profile) {
+          // في حال عدم وجود ملف شخصي، توجيهه للوحة الافتراضية
+          router.replace("/dashboard");
+          return;
+        }
+
+        if (profile.is_active === false) {
+          await supabase.auth.signOut();
+          throw new Error("هذا الحساب معطل حالياً من قبل إدارة المدرسة.");
+        }
+
+        router.replace("/dashboard");
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "حدث خطأ أثناء تسجيل الدخول";
+      const message = err instanceof Error ? err.message : "تعذر تسجيل الدخول، يرجى المحاولة لاحقاً.";
       setErrorMsg(message);
     } finally {
       setLoading(false);
     }
   };
 
-  // تسجيل دخول تجريبي سريع بنقرة واحدة لسرعة المعاينة والبيع
-  const handleQuickDemoLogin = (role: string, name: string) => {
-    localStorage.setItem(
-      "demo_user",
-      JSON.stringify({
-        id: "demo-" + role + "-id",
-        role: role,
-        name: name,
-        email: `${role}@school.edu`,
-      })
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center text-slate-600 text-sm" dir="rtl">
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-7 h-7 border-3 border-slate-700 border-t-transparent rounded-full animate-spin" />
+          <span>جارٍ التحقق من الجلسة...</span>
+        </div>
+      </div>
     );
-    router.push("/dashboard");
-  };
+  }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-center items-center p-4 selection:bg-blue-600 selection:text-white" dir="rtl">
-      <div className="w-full max-w-md">
-        {/* الشعار واسم النظام */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-500 mx-auto flex items-center justify-center shadow-xl shadow-blue-500/20 mb-3">
-            <GraduationCap className="w-9 h-9 text-white" />
+    <div className="min-h-screen bg-slate-100 flex flex-col justify-between selection:bg-slate-800 selection:text-white" dir="rtl">
+      {/* شريط علوي بسيط */}
+      <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+            <School className="w-5 h-5 text-slate-100" />
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight">نظام إدارة المدرسة الذكية</h1>
-          <p className="text-sm text-slate-400 mt-1">بوابة الدخول الموحدة للكوادر والطلاب وأولياء الأمور</p>
+          <div>
+            <h1 className="font-bold text-slate-900 text-sm">نظام إدارة المدرسة</h1>
+            <p className="text-[11px] text-slate-500">بوابة الإدارة المركزية الموحدة</p>
+          </div>
         </div>
 
-        {/* بطاقة تسجيل الدخول الرئيسية */}
-        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl">
+        <div>
+          <InstallPWA variant="badge" />
+        </div>
+      </header>
+
+      {/* نموذج تسجيل الدخول المركزي */}
+      <main className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl shadow-sm p-6 sm:p-8">
+          <div className="text-center mb-6">
+            <h2 className="text-lg font-bold text-slate-900">تسجيل الدخول للنظام</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              أدخل البريد الإلكتروني وكلمة المرور الخاصة بحسابك في المدرسة
+            </p>
+          </div>
+
           {errorMsg && (
-            <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 leading-relaxed">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{errorMsg}</span>
             </div>
           )}
 
-          <form onSubmit={handleSupabaseLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                البريد الإلكتروني أو اسم المستخدم
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                البريد الإلكتروني
               </label>
               <div className="relative">
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@school.com"
-                  className="w-full px-4 py-3 pr-10 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-blue-500 transition"
+                  placeholder="name@school.edu"
                   required
+                  autoFocus
+                  className="w-full pl-3 pr-9 py-2.5 rounded-lg border border-slate-300 text-slate-900 text-sm focus:outline-none focus:ring-1 focus:ring-slate-800 focus:border-slate-800 placeholder:text-slate-400 bg-white"
                 />
-                <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3.5" />
+                <Mail className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 كلمة المرور
               </label>
               <div className="relative">
@@ -130,112 +157,28 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3 pr-10 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-blue-500 transition"
                   required
+                  className="w-full pl-3 pr-9 py-2.5 rounded-lg border border-slate-300 text-slate-900 text-sm focus:outline-none focus:ring-1 focus:ring-slate-800 focus:border-slate-800 placeholder:text-slate-400 bg-white"
                 />
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3.5" />
+                <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
               </div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+              className="w-full py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm shadow-sm transition active:scale-[0.99] disabled:opacity-50 mt-2"
             >
-              <span>{loading ? "جارٍ التحقق..." : "تسجيل الدخول"}</span>
-              <ArrowRight className="w-4 h-4" />
+              {loading ? "جارٍ التحقق..." : "دخول النظام"}
             </button>
           </form>
-
-          {/* خط فاصل */}
-          <div className="relative my-6 text-center">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-800" />
-            </div>
-            <span className="relative bg-slate-900 px-3 text-[11px] text-slate-400 font-semibold uppercase">
-              أو تجربة الدخول المباشر (وضع الاستعراض الفوري)
-            </span>
-          </div>
-
-          {/* أزرار الدخول السريع لاختبار كل دور */}
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              type="button"
-              onClick={() => handleQuickDemoLogin("director", "أ. أحمد السامي (المدير العام)")}
-              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-right flex items-center gap-2.5 transition active:scale-95 group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
-                <Shield className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white group-hover:text-blue-300">لوحة المدير</div>
-                <div className="text-[10px] text-slate-400">إدارة شاملة</div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickDemoLogin("vice_director", "أ. محمد عبد الله (معاون المدير)")}
-              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-right flex items-center gap-2.5 transition active:scale-95 group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                <Shield className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white group-hover:text-indigo-300">معاون المدير</div>
-                <div className="text-[10px] text-slate-400">جداول وصفوف</div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickDemoLogin("teacher", "أ. سارة الخالد (مدرسة الرياضيات)")}
-              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-right flex items-center gap-2.5 transition active:scale-95 group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <UserCheck className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white group-hover:text-emerald-300">لوحة المدرس</div>
-                <div className="text-[10px] text-slate-400">غياب ودرجات</div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickDemoLogin("student", "زيد طارق (طالب - الأول متوسط)")}
-              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-right flex items-center gap-2.5 transition active:scale-95 group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                <BookOpen className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white group-hover:text-amber-300">لوحة الطالب</div>
-                <div className="text-[10px] text-slate-400">جدول ونقاط وواجبات</div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickDemoLogin("parent", "أبو زيد (ولي أمر الطالب زيد)")}
-              className="col-span-2 p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-right flex items-center justify-center gap-2.5 transition active:scale-95 group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                <Users className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white group-hover:text-purple-300">لوحة ولي الأمر</div>
-                <div className="text-[10px] text-slate-400">متابعة الأبناء والأقساط وتقرير PDF</div>
-              </div>
-            </button>
-          </div>
         </div>
+      </main>
 
-        {/* تلميح سفلي */}
-        <div className="text-center mt-6 text-xs text-slate-500">
-          منصة سحابية متوافقة مع Vercel و Supabase • تدعم PWA
-        </div>
-      </div>
+      {/* تذييل رسمي */}
+      <footer className="py-4 text-center text-xs text-slate-500 border-t border-slate-200 bg-white">
+        منظومة إدارة المدرسة المركزية • جميع الحقوق محفوظة
+      </footer>
     </div>
   );
 }
