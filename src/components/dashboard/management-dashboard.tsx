@@ -122,6 +122,7 @@ export function ManagementDashboard({
   const [subjectsModal, setSubjectsModal] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState("");
   const [subjectLoading, setSubjectLoading] = useState(false);
+  const [subjectMsg, setSubjectMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // تحديد مادة في خلية الجدول
   const [cellModal, setCellModal] = useState(false);
@@ -422,6 +423,8 @@ export function ManagementDashboard({
     e.preventDefault();
     if (!newSubjectName.trim()) return;
     setSubjectLoading(true);
+    setSubjectMsg(null);
+
     try {
       const res = await fetch("/api/admin/subjects", {
         method: "POST",
@@ -429,12 +432,19 @@ export function ManagementDashboard({
         body: JSON.stringify({ name: newSubjectName.trim() }),
       });
       const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "تعذر إضافة المادة.");
+      }
+
       if (data.subject) {
         setSubjects((prev) => [...prev.filter((s) => s.id !== data.subject.id), data.subject]);
+        setSubjectMsg({ type: "success", text: data.message || `تمت إضافة مادة (${data.subject.name}) بنجاح!` });
         setNewSubjectName("");
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ أثناء إضافة المادة.";
+      setSubjectMsg({ type: "error", text: msg });
     } finally {
       setSubjectLoading(false);
     }
@@ -1283,6 +1293,19 @@ export function ManagementDashboard({
                 إغلاق
               </Button>
             </div>
+
+            {subjectMsg && (
+              <div
+                className={`p-2.5 mb-3 rounded-lg text-xs flex items-center gap-2 ${
+                  subjectMsg.type === "success"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-rose-50 text-rose-700 border border-rose-200"
+                }`}
+              >
+                {subjectMsg.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+                <span>{subjectMsg.text}</span>
+              </div>
+            )}
 
             {/* نموذج إضافة مادة جديدة */}
             <form onSubmit={handleAddSubject} className="flex gap-2 mb-4">
