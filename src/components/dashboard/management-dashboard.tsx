@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Users,
   UserPlus,
@@ -111,7 +111,9 @@ export function ManagementDashboard({
   const [teacherMsg, setTeacherMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [newClassModal, setNewClassModal] = useState(false);
-  const [newClassData, setNewClassData] = useState({ name: "", section: "", stage: "متوسطة" });
+  const [newClassData, setNewClassData] = useState({ name: "", stage: "متوسطة", sectionsCount: 3 });
+  const [classLoading, setClassLoading] = useState(false);
+  const [classMsg, setClassMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [newStudentModal, setNewStudentModal] = useState(false);
   const [newStudentData, setNewStudentData] = useState({ name: "", classId: "", parentName: "", parentPhone: "", password: "" });
@@ -149,19 +151,39 @@ export function ManagementDashboard({
         });
       }
 
-      // 2. الصفوف
-      const { data: dbClasses } = await supabase.from("classes").select("*").order("name");
-      if (dbClasses && dbClasses.length > 0) {
-        setClasses(
-          dbClasses.map((c) => ({
-            id: c.id,
-            name: c.name,
-            section: c.section,
-            stage: c.stage,
-            studentCount: 0,
-          }))
-        );
-        setSelectedClassId((prev) => prev || dbClasses[0].id);
+      // 2. الصفوف والشعب (جلب مباشر عبر السيرفر)
+      try {
+        const cRes = await fetch("/api/admin/classes");
+        const cData = await cRes.json();
+        if (cData.classes && Array.isArray(cData.classes) && cData.classes.length > 0) {
+          setClasses(
+            cData.classes.map((c: any) => ({
+              id: c.id,
+              name: c.name,
+              section: c.section,
+              stage: c.stage,
+              studentCount: 0,
+            }))
+          );
+          setSelectedClassId((prev) => prev || cData.classes[0].id);
+        } else {
+          // جلب بديل عبر سوبابيس
+          const { data: dbClasses } = await supabase.from("classes").select("*").order("name");
+          if (dbClasses && dbClasses.length > 0) {
+            setClasses(
+              dbClasses.map((c) => ({
+                id: c.id,
+                name: c.name,
+                section: c.section,
+                stage: c.stage,
+                studentCount: 0,
+              }))
+            );
+            setSelectedClassId((prev) => prev || dbClasses[0].id);
+          }
+        }
+      } catch (cErr) {
+        console.warn("Classes fetch fallback:", cErr);
       }
 
       // 3. المعلمين (جلب مباشر عبر السيرفر الموثوق لتجاوز أي حجب في RLS)
@@ -319,24 +341,68 @@ export function ManagementDashboard({
     window.open(`https://wa.me/${targetNumber}?text=${message}`, "_blank");
   };
 
-  // إضافة صف
+  // إضافة صف وتوليد الشعب آلياً بالتسلسل الأبجدي
   const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newClassData.name || !newClassData.section) return;
+    if (!newClassData.name.trim()) return;
+    setClassLoading(true);
+    setClassMsg(null);
     try {
-      const supabase = createClient();
-      await supabase.from("classes").insert({
-        name: newClassData.name,
-        section: newClassData.section,
-        stage: newClassData.stage,
-        academic_year: settings.academicYear,
+      const res = await fetch("/api/admin/classes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newClassData.name.trim(),
+          stage: newClassData.stage,
+          sectionsCount: Number(newClassData.sectionsCount) || 1,
+          academicYear: settings.academicYear,
+        }),
       });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "تعذر إضافة الصف والشعب.");
+      }
+
+      setClassMsg({ type: "success", text: data.message || "تم إنشاء الصف والشعب بنجاح!" });
+      setNewClassData({ name: "", stage: "متوسطة", sectionsCount: 3 });
       fetchAllData();
-    } catch (e) {
-      console.error(e);
+      setTimeout(() => {
+        setNewClassModal(false);
+        setClassMsg(null);
+      }, 1500);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "فشل إضافة الصف والشعب.";
+      setClassMsg({ type: "error", text: msg });
+    } finally {
+      setClassLoading(false);
     }
-    setNewClassData({ name: "", section: "", stage: "متوسطة" });
-    setNewClassModal(false);
+  };
+
+  // حذف شعبة معينة
+  const handleDeleteClass = async (id: string, label: string) => {
+    if (!confirm(`هل أنت متأكد من حذف الشعبة (${label})؟`)) return;
+    try {
+      const res = await fetch(`/api/admin/classes?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        fetchAllData();
+      }
+    } catch (err) {
+      console.error("Delete class section error:", err);
+    }
+  };
+
+  // حذف صف بكامل شعبه
+  const handleDeleteEntireClass = async (className: string) => {
+    if (!confirm(`هل أنت متأكد من حذف صف (${className}) بجميع شعبه المسجلة؟`)) return;
+    try {
+      const res = await fetch(`/api/admin/classes?name=${encodeURIComponent(className)}`, { method: "DELETE" });
+      if (res.ok) {
+        fetchAllData();
+      }
+    } catch (err) {
+      console.error("Delete class error:", err);
+    }
   };
 
   // 2. إضافة طالب وولي أمر عبر مسار السيرفر الآمن
@@ -526,6 +592,22 @@ export function ManagementDashboard({
   // الحصص الـ 5 اليومية
   const periodsList = [1, 2, 3, 4, 5];
 
+  // تجميع الشعب حسب اسم الصف لتسهيل الإدارة وعرضها بتسلسل
+  const groupedClasses = useMemo(() => {
+    const map: Record<string, { name: string; stage: string; sections: ClassItem[] }> = {};
+    classes.forEach((c) => {
+      if (!map[c.name]) {
+        map[c.name] = { name: c.name, stage: c.stage, sections: [] };
+      }
+      map[c.name].sections.push(c);
+    });
+    // ترتيب الشعب أبجدياً في كل صف
+    Object.values(map).forEach((group) => {
+      group.sections.sort((a, b) => a.section.localeCompare(b.section, "ar"));
+    });
+    return Object.values(map).sort((a, b) => a.name.localeCompare(b.name, "ar"));
+  }, [classes]);
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col selection:bg-slate-800 selection:text-white pb-10" dir="rtl">
       {/* الرأس الإداري */}
@@ -697,37 +779,129 @@ export function ManagementDashboard({
         {/* الصفوف والشعب */}
         {activeTab === "classes" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200">
               <div>
                 <h2 className="text-sm font-bold text-slate-900">هيكل الصفوف الدراسية والشعب</h2>
-                <p className="text-xs text-slate-500">تنظيم الفصول المسجلة في قاعدة البيانات</p>
+                <p className="text-xs text-slate-500">
+                  إجمالي {groupedClasses.length} صف دراسي يحتوي على {classes.length} شعبة موزعة بالتسلسل الأبجدي.
+                </p>
               </div>
               <Button
-                onClick={() => setNewClassModal(true)}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
+                onClick={() => {
+                  setClassMsg(null);
+                  setNewClassModal(true);
+                }}
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 shadow-xs"
               >
                 <Plus className="w-3.5 h-3.5 ml-1.5" />
-                إضافة شعبة
+                إضافة صف وشعب جديدة
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {classes.map((c) => (
-                <div key={c.id} className="bg-white border border-slate-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-                    <span className="font-semibold text-slate-700">{c.stage}</span>
-                    <span>الشعبة {c.section}</span>
-                  </div>
-                  <div className="font-bold text-slate-900 text-sm">{c.name}</div>
-                  <div className="mt-3 pt-2.5 border-t border-slate-100 flex justify-between text-xs text-slate-500">
-                    <span>الطلاب المسجلين:</span>
-                    <span className="font-semibold text-slate-800">
-                      {students.filter((s) => s.classId === c.id).length} طالب
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+            {groupedClasses.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <h3 className="font-bold text-slate-700 text-sm mb-1">لا توجد صفوف دراسية مسجلة بعد</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
+                  اضغط على زر &quot;إضافة صف وشعب جديدة&quot; وأدخل اسم الصف وعدد شعبه ليقوم النظام بإنشائها آلياً.
+                </p>
+                <Button
+                  onClick={() => {
+                    setClassMsg(null);
+                    setNewClassModal(true);
+                  }}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8"
+                >
+                  <Plus className="w-3.5 h-3.5 ml-1.5" />
+                  إضافة صف دراسي الآن
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {groupedClasses.map((group) => {
+                  const totalStudentsInClass = group.sections.reduce(
+                    (acc, sec) => acc + students.filter((s) => s.classId === sec.id).length,
+                    0
+                  );
+
+                  return (
+                    <div
+                      key={group.name}
+                      className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:shadow-xs transition-shadow flex flex-col justify-between"
+                    >
+                      <div>
+                        {/* ترويسة الصف */}
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-bold text-slate-900 text-sm">{group.name}</h3>
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold border border-slate-200">
+                                {group.stage}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-500">
+                              {group.sections.length} شعب • {totalStudentsInClass} طالب إجمالي
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteEntireClass(group.name)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                            title={`حذف صف ${group.name} بكامل شعبه`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* قائمة الشعب الأبجدية */}
+                        <div className="space-y-2">
+                          <span className="text-[11px] font-semibold text-slate-600 block mb-1.5">
+                            الشعب المسجلة بالتسلسل الأبجدي:
+                          </span>
+                          <div className="grid grid-cols-2 gap-2">
+                            {group.sections.map((sec) => {
+                              const secStudents = students.filter((s) => s.classId === sec.id).length;
+                              return (
+                                <div
+                                  key={sec.id}
+                                  className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200/80 text-xs hover:border-slate-300 transition"
+                                >
+                                  <div>
+                                    <div className="font-bold text-slate-800">
+                                      الشعبة ({sec.section})
+                                    </div>
+                                    <div className="text-[10px] text-slate-500">
+                                      {secStudents} طالب
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteClass(sec.id, `${group.name} - الشعبة ${sec.section}`)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-100/50 rounded transition"
+                                    title="حذف الشعبة"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                        <span>العام الدراسي: {settings.academicYear}</span>
+                        <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[10px]">
+                          نشط ومجدول
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -1290,49 +1464,137 @@ export function ManagementDashboard({
         </div>
       )}
 
-      {/* نافذة إضافة صف */}
+      {/* نافذة إضافة صف وتوليد الشعب آلياً */}
       {newClassModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
-            <h3 className="font-bold text-sm text-slate-900 mb-3">إضافة شعبة دراسية</h3>
-            <form onSubmit={handleAddClass} className="space-y-3 text-xs">
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="p-2 bg-slate-100 rounded-lg text-slate-800">
+                <BookOpen className="w-4 h-4" />
+              </div>
+              <h3 className="font-bold text-sm text-slate-900">إضافة صف دراسي وتوليد الشعب</h3>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">
+              أدخل اسم الصف وحدد عدد الشعب، وسيقوم النظام بتوليدها فوراً بالتسلسل الأبجدي (أ، ب، ج، د...)
+            </p>
+
+            {classMsg && (
+              <div
+                className={`p-2.5 mb-3 rounded-lg text-xs flex items-center gap-2 ${
+                  classMsg.type === "success"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-rose-50 text-rose-700 border border-rose-200"
+                }`}
+              >
+                {classMsg.type === "success" ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                )}
+                <span>{classMsg.text}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAddClass} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">اسم الصف:</label>
+                <label className="block text-slate-700 font-semibold mb-1">اسم الصف الدراسي:</label>
                 <input
                   type="text"
                   required
                   value={newClassData.name}
                   onChange={(e) => setNewClassData({ ...newClassData, name: e.target.value })}
-                  placeholder="مثال: الأول متوسط"
-                  className="w-full px-3 py-2 border rounded-lg border-slate-300"
+                  placeholder="مثال: الأول متوسط، الرابع العلمي، السادس الإعدادي..."
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800"
                 />
+                {/* مقترحات سريعة */}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {[
+                    { name: "الأول متوسط", stage: "متوسطة" },
+                    { name: "الثاني متوسط", stage: "متوسطة" },
+                    { name: "الثالث متوسط", stage: "متوسطة" },
+                    { name: "الرابع الإعدادي", stage: "إعدادية" },
+                    { name: "الخامس الإعدادي", stage: "إعدادية" },
+                    { name: "السادس الإعدادي", stage: "إعدادية" },
+                  ].map((sug) => (
+                    <button
+                      key={sug.name}
+                      type="button"
+                      onClick={() => setNewClassData({ ...newClassData, name: sug.name, stage: sug.stage })}
+                      className="px-2 py-0.5 rounded text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                    >
+                      {sug.name}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">الشعبة:</label>
-                <input
-                  type="text"
-                  required
-                  value={newClassData.section}
-                  onChange={(e) => setNewClassData({ ...newClassData, section: e.target.value })}
-                  placeholder="أ / ب / ج"
-                  className="w-full px-3 py-2 border rounded-lg border-slate-300"
-                />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">المرحلة الدراسية:</label>
+                  <select
+                    value={newClassData.stage}
+                    onChange={(e) => setNewClassData({ ...newClassData, stage: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-slate-800"
+                  >
+                    <option value="ابتدائية">ابتدائية</option>
+                    <option value="متوسطة">متوسطة</option>
+                    <option value="إعدادية">إعدادية</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">عدد الشعب في هذا الصف:</label>
+                  <select
+                    value={newClassData.sectionsCount}
+                    onChange={(e) => setNewClassData({ ...newClassData, sectionsCount: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white font-semibold focus:outline-none focus:ring-1 focus:ring-slate-800"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map((num) => (
+                      <option key={num} value={num}>
+                        {num} {num === 1 ? "شعبة واحدة" : num === 2 ? "شعبتان" : "شعب"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">المرحلة:</label>
-                <select
-                  value={newClassData.stage}
-                  onChange={(e) => setNewClassData({ ...newClassData, stage: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white"
+
+              {/* معاينة حية للشعب الناتجة */}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <span className="text-[11px] font-semibold text-slate-600 block mb-1.5">
+                  معاينة الشعب التي ستُنشأ تلقائياً:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {["أ", "ب", "ج", "د", "هـ", "و", "ز", "ح", "ط", "ي"]
+                    .slice(0, Math.min(newClassData.sectionsCount, 10))
+                    .map((letter) => (
+                      <div
+                        key={letter}
+                        className="px-2.5 py-1 bg-white border border-slate-200 text-slate-800 rounded-md font-bold text-xs shadow-2xs"
+                      >
+                        الشعبة ({letter})
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={classLoading}
+                  onClick={() => setNewClassModal(false)}
+                  className="text-xs h-8"
                 >
-                  <option value="ابتدائية">ابتدائية</option>
-                  <option value="متوسطة">متوسطة</option>
-                  <option value="إعدادية">إعدادية</option>
-                </select>
-              </div>
-              <div className="flex justify-end gap-2 pt-3">
-                <Button type="button" variant="ghost" onClick={() => setNewClassModal(false)} className="text-xs h-8">إلغاء</Button>
-                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">حفظ الصف</Button>
+                  إلغاء
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={classLoading}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                >
+                  {classLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{classLoading ? "جارٍ التوليد والحفظ..." : "إنشاء وحفظ الشعب"}</span>
+                </Button>
               </div>
             </form>
           </div>

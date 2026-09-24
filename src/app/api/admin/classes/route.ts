@@ -1,0 +1,113 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase/server";
+
+// التسلسل الأبجدي العربي المعتمد للشعب في المدارس
+const ARABIC_ALPHABET_SECTIONS = ["أ", "ب", "ج", "د", "هـ", "و", "ز", "ح", "ط", "ي", "ك", "ل"];
+
+export async function GET() {
+  try {
+    const adminSupabase = createAdminSupabaseClient();
+    let { data: classes, error } = await adminSupabase
+      .from("classes")
+      .select("*")
+      .order("name", { ascending: true })
+      .order("section", { ascending: true });
+
+    if (error || !classes) {
+      const serverSupabase = createServerSupabaseClient();
+      const fallback = await serverSupabase
+        .from("classes")
+        .select("*")
+        .order("name", { ascending: true })
+        .order("section", { ascending: true });
+      classes = fallback.data || [];
+    }
+
+    return NextResponse.json({ classes: classes || [] });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Error";
+    return NextResponse.json({ error: message, classes: [] }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { name, stage, sectionsCount, academicYear } = body;
+
+    if (!name || !name.trim()) {
+      return NextResponse.json({ error: "اسم الصف مطلوب." }, { status: 400 });
+    }
+
+    const count = Math.max(1, Math.min(Number(sectionsCount) || 1, ARABIC_ALPHABET_SECTIONS.length));
+    const cleanStage = stage || "متوسطة";
+    const year = academicYear || "2025-2026";
+    const cleanName = name.trim();
+
+    const adminSupabase = createAdminSupabaseClient();
+    const serverSupabase = createServerSupabaseClient();
+
+    // تجهيز مصفوفة الشعب بالتسلسل الأبجدي (أ، ب، ج، د...)
+    const newClassesToInsert = [];
+    for (let i = 0; i < count; i++) {
+      newClassesToInsert.push({
+        name: cleanName,
+        section: ARABIC_ALPHABET_SECTIONS[i],
+        stage: cleanStage,
+        academic_year: year,
+      });
+    }
+
+    // إدراج الشعب في قاعدة البيانات مع تجنب التكرار
+    const { data: inserted, error: insertErr } = await adminSupabase
+      .from("classes")
+      .upsert(newClassesToInsert, { onConflict: "name,section,academic_year" })
+      .select("*");
+
+    let finalClasses = inserted;
+
+    if (insertErr || !finalClasses) {
+      const { data: serverInserted, error: sErr } = await serverSupabase
+        .from("classes")
+        .upsert(newClassesToInsert, { onConflict: "name,section,academic_year" })
+        .select("*");
+
+      if (sErr && !serverInserted) {
+        throw new Error(sErr.message || insertErr?.message || "تعذر حفظ الصف والشعب.");
+      }
+      finalClasses = serverInserted;
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `تم إنشاء صف (${cleanName}) بعدد (${count}) شعب بنجاح.`,
+      classes: finalClasses,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "حدث خطأ أثناء إضافة الصف والشعب.";
+    console.error("Add classes error:", err);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const name = searchParams.get("name");
+
+    const adminSupabase = createAdminSupabaseClient();
+    if (id) {
+      await adminSupabase.from("classes").delete().eq("id", id);
+    } else if (name) {
+      await adminSupabase.from("classes").delete().eq("name", name);
+    } else {
+      return NextResponse.json({ error: "معرف الصف مطلوب للحذف." }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "حدث خطأ أثناء حذف الصف.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
