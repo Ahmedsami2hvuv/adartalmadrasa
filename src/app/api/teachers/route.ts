@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase/server";
+import { parseAndFormatPhone } from "@/lib/phone-utils";
 
 export async function GET() {
   try {
@@ -34,15 +35,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "اسم المعلم مطلوب." }, { status: 400 });
     }
 
-    const cleanPhone = (phone || "").replace(/[^0-9]/g, "");
-    const teacherPassword = password?.trim() || (cleanPhone.length >= 6 ? cleanPhone : "123456");
+    // معالجة ومرونة رقم الهاتف بكافة الأشكال
+    const parsedPhone = parseAndFormatPhone(phone || "");
+    const cleanPhoneDigits = parsedPhone.digitsOnly || Date.now().toString().slice(-8);
+    const teacherPassword = password?.trim() || (cleanPhoneDigits.length >= 6 ? cleanPhoneDigits : "123456");
+
     const adminSupabase = createAdminSupabaseClient();
 
-    // 1. توليد إيميل رسمي للمعلم
+    // استخدام نطاق رسمي قياسي يقبله سوبابيس دائماً
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const teacherEmail = cleanPhone
-      ? `teacher_${cleanPhone}@login.adartalmadrasa.local`
-      : `teacher_${Date.now()}_${randomSuffix}@login.adartalmadrasa.local`;
+    const teacherEmail = `teacher_${cleanPhoneDigits}_${randomSuffix}@adartalmadrasa.com`;
 
     let userId: string | null = null;
 
@@ -60,14 +62,14 @@ export async function POST(req: NextRequest) {
 
       if (!createError && userCreated?.user) {
         userId = userCreated.user.id;
-      } else {
+      } else if (createError) {
         console.warn("admin.createUser error:", createError);
       }
     } catch (e) {
       console.warn("admin.createUser exception:", e);
     }
 
-    // إذا فشل admin (مثلاً في حال عدم توفر Service Role Key)، نستخدم signUp كبديل
+    // إذا لم ينجح admin، نستخدم signUp كبديل
     if (!userId) {
       const serverClient = createServerSupabaseClient();
       const { data: signUpData, error: signUpError } = await serverClient.auth.signUp({
@@ -88,11 +90,14 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. إدخال أو تحديث الملف الشخصي في profiles
+    // نخزن الرقم الدولي الجميل والموحد
+    const storedPhone = parsedPhone.whatsappNumber ? `+${parsedPhone.whatsappNumber}` : phone || null;
+
     const { error: profileError } = await adminSupabase.from("profiles").upsert({
       id: userId,
       role: "teacher",
       full_name: name.trim(),
-      phone: phone || null,
+      phone: storedPhone,
       password: teacherPassword,
       is_active: true,
     });
@@ -123,7 +128,7 @@ export async function POST(req: NextRequest) {
       teacher: {
         id: teacherRecord.id,
         name: name.trim(),
-        phone: phone || "-",
+        phone: storedPhone || "-",
         subject: subject?.trim() || "عام",
         email: teacherEmail,
         password: teacherPassword,

@@ -25,6 +25,7 @@ import { InstallPWA } from "@/components/install-pwa";
 import { LogoutButton } from "@/components/logout-button";
 import { printStudentReport } from "@/lib/pdf-report";
 import { createClient } from "@/lib/supabase/client";
+import { parseAndFormatPhone } from "@/lib/phone-utils";
 
 interface Teacher {
   id: string;
@@ -327,14 +328,25 @@ export function ManagementDashboard({
     }
   };
 
-  // إرسال واتساب للمعلم
+  // إرسال واتساب للمعلم بالصيغة الدولية المعتمدة 100%
   const sendWhatsAppInvite = (teacher: Teacher) => {
+    const parsed = parseAndFormatPhone(teacher.phone);
     const inviteLink = `${window.location.origin}/login`;
     const message = encodeURIComponent(
-      `دعوة رسمية من ${settings.schoolName}:\nالأستاذ/ة ${teacher.name}، تم تفعيل حسابكم في منصة إدارة المدرسة.\nيمكنكم تسجيل الدخول عبر الرابط:\n${inviteLink}`
+      `دعوة رسمية من ${settings.schoolName}:\nالأستاذ/ة ${teacher.name}، تم تفعيل حسابكم في منصة إدارة المدرسة.\nيمكنكم تسجيل الدخول برقم هاتفكم أو كلمة المرور عبر الرابط:\n${inviteLink}`
     );
-    const cleanPhone = teacher.phone.replace(/[^0-9]/g, "");
-    window.open(`https://wa.me/${cleanPhone}?text=${message}`, "_blank");
+    const targetNumber = parsed.whatsappNumber || teacher.phone.replace(/[^0-9]/g, "");
+    window.open(`https://wa.me/${targetNumber}?text=${message}`, "_blank");
+  };
+
+  // إرسال واتساب لولي الأمر
+  const sendWhatsAppToParent = (student: Student) => {
+    const parsed = parseAndFormatPhone(student.parentPhone);
+    const message = encodeURIComponent(
+      `تحية طيبة من إدارة ${settings.schoolName}:\nولي أمر الطالب/ة ${student.name}، هذا إشعار لمتابعة الحضور والتقارير الأكاديمية للطالب عبر المنصة المدرسية.`
+    );
+    const targetNumber = parsed.whatsappNumber || student.parentPhone.replace(/[^0-9]/g, "");
+    window.open(`https://wa.me/${targetNumber}?text=${message}`, "_blank");
   };
 
   // إضافة صف
@@ -662,14 +674,17 @@ export function ManagementDashboard({
                     <tr key={teacher.id} className="hover:bg-slate-50/60">
                       <td className="p-3 font-semibold text-slate-900">{teacher.name}</td>
                       <td className="p-3 text-slate-600">{teacher.subject}</td>
-                      <td className="p-3 font-mono text-slate-600" dir="ltr">{teacher.phone}</td>
+                      <td className="p-3 font-mono text-slate-700" dir="ltr">
+                        {parseAndFormatPhone(teacher.phone).displayFormatted}
+                      </td>
                       <td className="p-3 font-mono text-slate-700">{teacher.inviteToken}</td>
                       <td className="p-3 text-center">
                         <button
                           onClick={() => sendWhatsAppInvite(teacher)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-xs border border-slate-200"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-medium text-xs border border-emerald-200 transition"
+                          title="فتح محادثة واتساب مع المعلم"
                         >
-                          <Share2 className="w-3 h-3 text-slate-600" />
+                          <Share2 className="w-3 h-3 text-emerald-600" />
                           <span>إرسال عبر واتساب</span>
                         </button>
                       </td>
@@ -763,8 +778,22 @@ export function ManagementDashboard({
                       <td className="p-3 font-semibold text-slate-900">{student.name}</td>
                       <td className="p-3 text-slate-600">{student.className}</td>
                       <td className="p-3 text-slate-600">
-                        <div>{student.parentName}</div>
-                        <div className="text-[10px] text-slate-400 font-mono" dir="ltr">{student.parentPhone}</div>
+                        <div className="font-semibold text-slate-800">{student.parentName}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[11px] text-slate-500 font-mono" dir="ltr">
+                            {parseAndFormatPhone(student.parentPhone).displayFormatted}
+                          </span>
+                          {student.parentPhone && student.parentPhone !== "-" && (
+                            <button
+                              onClick={() => sendWhatsAppToParent(student)}
+                              className="inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 transition"
+                              title="مراسلة ولي الأمر عبر واتساب"
+                            >
+                              <Share2 className="w-2.5 h-2.5 text-emerald-600" />
+                              <span>واتساب</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="p-3 font-mono text-slate-700 font-semibold">{student.qrCode}</td>
                       <td className="p-3">
@@ -1023,16 +1052,17 @@ export function ManagementDashboard({
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">رقم الهاتف:</label>
+                <label className="block text-slate-700 font-semibold mb-1">رقم الهاتف (عراقي أو دولي):</label>
                 <input
                   type="text"
                   required
                   value={newTeacherData.phone}
                   onChange={(e) => setNewTeacherData({ ...newTeacherData, phone: e.target.value })}
-                  placeholder="07701234567"
-                  className="w-full px-3 py-2 border rounded-lg border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-slate-800"
+                  placeholder="مثال: 07733921468 أو +964 776 403 1859 أو 7733921468"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
                   dir="ltr"
                 />
+                <p className="text-[10px] text-slate-500 mt-1">يقبل كافة الصيغ (مع أو بدون المفتاح، بالإنجليزية أو بالعربية) ويهيئه تلقائياً للواتساب.</p>
               </div>
 
               <div>
@@ -1204,10 +1234,11 @@ export function ManagementDashboard({
                   type="text"
                   value={newStudentData.parentPhone}
                   onChange={(e) => setNewStudentData({ ...newStudentData, parentPhone: e.target.value })}
-                  placeholder="07801234567"
-                  className="w-full px-3 py-2 border rounded-lg border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-slate-800"
+                  placeholder="مثال: 07801234567 أو +964 780 123 4567 أو بالعربي"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
                   dir="ltr"
                 />
+                <p className="text-[10px] text-slate-500 mt-1">يقبل كافة الصيغ العربية والإنجليزية ويضبطه للواتساب تلقائياً.</p>
               </div>
 
               <div className="flex justify-end gap-2 pt-3">

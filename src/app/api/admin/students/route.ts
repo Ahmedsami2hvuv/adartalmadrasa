@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase/server";
+import { parseAndFormatPhone } from "@/lib/phone-utils";
 
 export async function GET() {
   try {
@@ -39,12 +40,14 @@ export async function POST(req: NextRequest) {
     const adminSupabase = createAdminSupabaseClient();
     const defaultPassword = password?.trim() || "123456";
 
-    // 1. إنشاء حساب وسجل ولي الأمر
-    const cleanParentPhone = (parentPhone || "").replace(/[^0-9]/g, "");
+    // 1. معالجة وتنسيق هاتف ولي الأمر بمرونة كاملة
+    const parsedParentPhone = parseAndFormatPhone(parentPhone || "");
+    const cleanParentDigits = parsedParentPhone.digitsOnly || Date.now().toString().slice(-8);
+    const storedParentPhone = parsedParentPhone.whatsappNumber ? `+${parsedParentPhone.whatsappNumber}` : parentPhone || null;
+
+    // استخدام دومين رسمي قياسي مقبول في سوبابيس
     const randomParentSuffix = Math.floor(1000 + Math.random() * 9000);
-    const parentEmail = cleanParentPhone
-      ? `parent_${cleanParentPhone}@login.adartalmadrasa.local`
-      : `parent_${Date.now()}_${randomParentSuffix}@login.adartalmadrasa.local`;
+    const parentEmail = `parent_${cleanParentDigits}_${randomParentSuffix}@adartalmadrasa.com`;
 
     let parentUserId: string | null = null;
     try {
@@ -74,7 +77,7 @@ export async function POST(req: NextRequest) {
         id: parentUserId,
         role: "parent",
         full_name: (parentName || "ولي أمر").trim(),
-        phone: parentPhone || null,
+        phone: storedParentPhone,
         password: defaultPassword,
         is_active: true,
       });
@@ -89,7 +92,7 @@ export async function POST(req: NextRequest) {
 
     // 2. إنشاء حساب وسجل الطالب
     const randomStudentSuffix = Math.floor(1000 + Math.random() * 9000);
-    const studentEmail = `student_${Date.now()}_${randomStudentSuffix}@login.adartalmadrasa.local`;
+    const studentEmail = `student_${Date.now()}_${randomStudentSuffix}@adartalmadrasa.com`;
 
     let studentUserId: string | null = null;
     try {
@@ -152,7 +155,7 @@ export async function POST(req: NextRequest) {
         qrCode,
         classId,
         parentName: parentName || "ولي أمر",
-        parentPhone: parentPhone || "-",
+        parentPhone: storedParentPhone || "-",
       },
     });
   } catch (err: unknown) {
