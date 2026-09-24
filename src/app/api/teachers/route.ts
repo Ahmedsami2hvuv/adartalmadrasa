@@ -185,10 +185,11 @@ export async function POST(req: NextRequest) {
 
     if (!tRes.error && tRes.data) {
       finalTeacherRecord = tRes.data;
-    } else {
-      // حتى لو فشل جدول teachers، فإن الحساب تم إنشاؤه بنجاح في profiles
-      console.warn("Teacher record in teachers table could not be saved, but profile is ready:", tRes.error?.message);
+    } else if (!pErr) {
       finalTeacherRecord = { id: teacherProfileId, profile_id: teacherProfileId };
+    } else {
+      const errorMsg = pErr.message || tRes.error?.message || "تعذر حفظ المعلم في قاعدة البيانات.";
+      return NextResponse.json({ error: `خطأ قاعدة البيانات: ${errorMsg}` }, { status: 400 });
     }
 
     return NextResponse.json({
