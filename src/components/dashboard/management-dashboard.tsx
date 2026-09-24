@@ -11,12 +11,14 @@ import {
   Settings,
   Share2,
   Trash2,
-  ArrowRightLeft,
   FileDown,
   Plus,
   AlertTriangle,
   School,
   Loader2,
+  CheckCircle2,
+  BookMarked,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
@@ -54,12 +56,19 @@ interface Student {
   installmentsStatus: "paid" | "partial" | "unpaid";
 }
 
+interface SubjectItem {
+  id: string;
+  name: string;
+  stage?: string;
+}
+
 interface ScheduleEntry {
   id: string;
   classId: string;
   className: string;
   teacherId: string;
   teacherName: string;
+  subjectId?: string;
   subject: string;
   day: number;
   period: number;
@@ -80,7 +89,12 @@ export function ManagementDashboard({
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [subjects, setSubjects] = useState<SubjectItem[]>([]);
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
+  
+  // الصف المختار للجدول الأسبوعي
+  const [selectedClassId, setSelectedClassId] = useState<string>("");
+
   const [settings, setSettings] = useState({
     schoolName: "المدرسة النموذجية",
     workingDays: 5,
@@ -89,18 +103,34 @@ export function ManagementDashboard({
     academicYear: "2025-2026",
   });
 
-  // النوافذ
+  // النوافذ وحالات التحميل
   const [newTeacherModal, setNewTeacherModal] = useState(false);
-  const [newTeacherData, setNewTeacherData] = useState({ name: "", phone: "", subject: "" });
+  const [newTeacherData, setNewTeacherData] = useState({ name: "", phone: "", subject: "", password: "" });
+  const [teacherLoading, setTeacherLoading] = useState(false);
+  const [teacherMsg, setTeacherMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   const [newClassModal, setNewClassModal] = useState(false);
   const [newClassData, setNewClassData] = useState({ name: "", section: "", stage: "متوسطة" });
+
   const [newStudentModal, setNewStudentModal] = useState(false);
-  const [newStudentData, setNewStudentData] = useState({ name: "", classId: "", parentName: "", parentPhone: "" });
-  const [newScheduleModal, setNewScheduleModal] = useState(false);
-  const [newScheduleData, setNewScheduleData] = useState({ classId: "", teacherId: "", subject: "", day: 1, period: 1 });
+  const [newStudentData, setNewStudentData] = useState({ name: "", classId: "", parentName: "", parentPhone: "", password: "" });
+  const [studentLoading, setStudentLoading] = useState(false);
+  const [studentMsg, setStudentMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // إدارة المواد
+  const [subjectsModal, setSubjectsModal] = useState(false);
+  const [newSubjectName, setNewSubjectName] = useState("");
+  const [subjectLoading, setSubjectLoading] = useState(false);
+
+  // تحديد مادة في خلية الجدول
+  const [cellModal, setCellModal] = useState(false);
+  const [activeCell, setActiveCell] = useState<{ day: number; period: number; existing?: ScheduleEntry } | null>(null);
+  const [cellSubjectId, setCellSubjectId] = useState("");
+  const [cellTeacherId, setCellTeacherId] = useState("");
+  const [cellLoading, setCellLoading] = useState(false);
   const [scheduleError, setScheduleError] = useState("");
 
-  // جلب كافة البيانات الفعلية من سوبابيس
+  // جلب كافة البيانات الفعلية من سوبابيس ومسارات السيرفر
   const fetchAllData = useCallback(async () => {
     try {
       const supabase = createClient();
@@ -129,6 +159,7 @@ export function ManagementDashboard({
             studentCount: 0,
           }))
         );
+        setSelectedClassId((prev) => prev || dbClasses[0].id);
       }
 
       // 3. المعلمين
@@ -197,7 +228,18 @@ export function ManagementDashboard({
         );
       }
 
-      // 5. الجدول الأسبوعي
+      // 5. المواد الدراسية
+      try {
+        const subRes = await fetch("/api/admin/subjects");
+        const subData = await subRes.json();
+        if (subData.subjects) {
+          setSubjects(subData.subjects);
+        }
+      } catch (e) {
+        console.warn("Subjects fetch fallback:", e);
+      }
+
+      // 6. الجدول الأسبوعي
       const { data: dbSchedules } = await supabase
         .from("weekly_schedules")
         .select(`
@@ -206,6 +248,7 @@ export function ManagementDashboard({
           period,
           class_id,
           teacher_id,
+          subject_id,
           classes ( name, section ),
           subjects ( name ),
           teachers ( profiles ( full_name ) )
@@ -220,6 +263,7 @@ export function ManagementDashboard({
               period: number;
               class_id: string;
               teacher_id: string;
+              subject_id?: string;
               classes?: { name: string; section: string };
               subjects?: { name: string };
               teachers?: { profiles?: { full_name: string } };
@@ -230,6 +274,7 @@ export function ManagementDashboard({
               className: row.classes ? `${row.classes.name} (${row.classes.section})` : "صف",
               teacherId: row.teacher_id,
               teacherName: row.teachers?.profiles?.full_name || "معلم",
+              subjectId: row.subject_id,
               subject: row.subjects?.name || "مادة",
               day: row.day_of_week,
               period: row.period,
@@ -248,38 +293,45 @@ export function ManagementDashboard({
     fetchAllData();
   }, [fetchAllData]);
 
-  // إضافة معلم
+  // 1. إضافة معلم عبر مسار السيرفر الآمن
   const handleAddTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTeacherData.name || !newTeacherData.phone) return;
+    if (!newTeacherData.name.trim()) return;
+    setTeacherLoading(true);
+    setTeacherMsg(null);
+
     try {
-      const supabase = createClient();
-      // إنشاء حساب أو إدخال
-      const fakeId = crypto.randomUUID();
-      await supabase.from("profiles").insert({
-        id: fakeId,
-        full_name: newTeacherData.name,
-        phone: newTeacherData.phone,
-        role: "teacher",
+      const res = await fetch("/api/teachers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newTeacherData),
       });
-      await supabase.from("teachers").insert({
-        profile_id: fakeId,
-        specialization: newTeacherData.subject,
-        subjects: [newTeacherData.subject],
-      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "تعذر إضافة المعلم.");
+      }
+
+      setTeacherMsg({ type: "success", text: `تمت إضافة المعلم (${data.teacher.name}) وإنشاء حسابه بنجاح!` });
+      setNewTeacherData({ name: "", phone: "", subject: "", password: "" });
       fetchAllData();
-    } catch (e) {
-      console.error(e);
+      setTimeout(() => {
+        setNewTeacherModal(false);
+        setTeacherMsg(null);
+      }, 1500);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "فشل إضافة المعلم.";
+      setTeacherMsg({ type: "error", text: msg });
+    } finally {
+      setTeacherLoading(false);
     }
-    setNewTeacherData({ name: "", phone: "", subject: "" });
-    setNewTeacherModal(false);
   };
 
   // إرسال واتساب للمعلم
   const sendWhatsAppInvite = (teacher: Teacher) => {
-    const inviteLink = `${window.location.origin}/login?invite=${teacher.inviteToken}&role=teacher`;
+    const inviteLink = `${window.location.origin}/login`;
     const message = encodeURIComponent(
-      `دعوة رسمية من ${settings.schoolName}:\nالأستاذ/ة ${teacher.name}، يرجى تفعيل حسابكم في منصة إدارة المدرسة عبر الرابط:\n${inviteLink}`
+      `دعوة رسمية من ${settings.schoolName}:\nالأستاذ/ة ${teacher.name}، تم تفعيل حسابكم في منصة إدارة المدرسة.\nيمكنكم تسجيل الدخول عبر الرابط:\n${inviteLink}`
     );
     const cleanPhone = teacher.phone.replace(/[^0-9]/g, "");
     window.open(`https://wa.me/${cleanPhone}?text=${message}`, "_blank");
@@ -305,46 +357,41 @@ export function ManagementDashboard({
     setNewClassModal(false);
   };
 
-  // إضافة طالب
+  // 2. إضافة طالب وولي أمر عبر مسار السيرفر الآمن
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStudentData.name) return;
+    if (!newStudentData.name.trim()) return;
+    setStudentLoading(true);
+    setStudentMsg(null);
+
     try {
-      const supabase = createClient();
-      const studentProfileId = crypto.randomUUID();
-      const parentProfileId = crypto.randomUUID();
-
-      // ملف ولي الأمر
-      await supabase.from("profiles").insert({
-        id: parentProfileId,
-        full_name: newStudentData.parentName || "ولي أمر",
-        phone: newStudentData.parentPhone || "",
-        role: "parent",
-      });
-      const { data: parentRecord } = await supabase.from("parents").insert({ profile_id: parentProfileId }).select("id").single();
-
-      // ملف الطالب
-      await supabase.from("profiles").insert({
-        id: studentProfileId,
-        full_name: newStudentData.name,
-        role: "student",
+      const res = await fetch("/api/admin/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...newStudentData,
+          classId: newStudentData.classId || classes[0]?.id,
+        }),
       });
 
-      const qr = "STU-" + Math.floor(1000 + Math.random() * 9000);
-      await supabase.from("students").insert({
-        profile_id: studentProfileId,
-        class_id: newStudentData.classId || classes[0]?.id,
-        parent_id: parentRecord?.id || null,
-        qr_code: qr,
-        academic_year: settings.academicYear,
-      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "تعذر تسجيل الطالب.");
+      }
 
+      setStudentMsg({ type: "success", text: `تم تسجيل الطالب (${data.student.name}) وتوليد كود الـ QR بنجاح!` });
+      setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "", password: "" });
       fetchAllData();
-    } catch (e) {
-      console.error(e);
+      setTimeout(() => {
+        setNewStudentModal(false);
+        setStudentMsg(null);
+      }, 1500);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "فشل تسجيل الطالب.";
+      setStudentMsg({ type: "error", text: msg });
+    } finally {
+      setStudentLoading(false);
     }
-    setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
-    setNewStudentModal(false);
   };
 
   // تعديل صف الطالب
@@ -358,70 +405,88 @@ export function ManagementDashboard({
     }
   };
 
-  // إضافة حصة بالجدول مع فحص التضارب
-  const handleAddSchedule = async (e: React.FormEvent) => {
+  // 3. إضافة مادة دراسية جديدة
+  const handleAddSubject = async (e: React.FormEvent) => {
     e.preventDefault();
-    setScheduleError("");
-
-    // فحص التضارب محلياً أولاً
-    const teacherConflict = schedules.find(
-      (s) =>
-        s.teacherId === newScheduleData.teacherId &&
-        s.day === Number(newScheduleData.day) &&
-        s.period === Number(newScheduleData.period)
-    );
-    if (teacherConflict) {
-      setScheduleError(
-        `تضارب جدول: المعلم (${teacherConflict.teacherName}) مرتبط بحصة مع (${teacherConflict.className}) في هذا الوقت.`
-      );
-      return;
-    }
-
-    const classConflict = schedules.find(
-      (s) =>
-        s.classId === newScheduleData.classId &&
-        s.day === Number(newScheduleData.day) &&
-        s.period === Number(newScheduleData.period)
-    );
-    if (classConflict) {
-      setScheduleError(
-        `تضارب جدول: هذا الصف لديه حصة (${classConflict.subject}) مسجلة في هذا التوقيت.`
-      );
-      return;
-    }
-
+    if (!newSubjectName.trim()) return;
+    setSubjectLoading(true);
     try {
-      const supabase = createClient();
-      // جلب مادة أو إدراجها
-      let subjectId: string | null = null;
-      const { data: subData } = await supabase.from("subjects").select("id").eq("name", newScheduleData.subject).single();
-      if (subData) {
-        subjectId = subData.id;
-      } else {
-        const { data: newSub } = await supabase.from("subjects").insert({ name: newScheduleData.subject }).select("id").single();
-        subjectId = newSub?.id || null;
+      const res = await fetch("/api/admin/subjects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newSubjectName.trim() }),
+      });
+      const data = await res.json();
+      if (data.subject) {
+        setSubjects((prev) => [...prev.filter((s) => s.id !== data.subject.id), data.subject]);
+        setNewSubjectName("");
       }
-
-      if (subjectId) {
-        await supabase.from("weekly_schedules").insert({
-          class_id: newScheduleData.classId,
-          teacher_id: newScheduleData.teacherId,
-          subject_id: subjectId,
-          day_of_week: Number(newScheduleData.day),
-          period: Number(newScheduleData.period),
-        });
-        fetchAllData();
-      }
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubjectLoading(false);
     }
-
-    setNewScheduleModal(false);
   };
 
-  const handlePromoteStudents = () => {
-    if (confirm("هل تؤكد ترحيل سجلات الطلاب للسنة الدراسية الجديدة؟")) {
-      alert("تمت ترقية الطلاب للسنة الجديدة بنجاح.");
+  // فتح نافذة تحديد مادة لخلية معينة في الجدول
+  const openCellModal = (day: number, period: number) => {
+    const existing = schedules.find(
+      (s) => s.classId === selectedClassId && s.day === day && s.period === period
+    );
+    setActiveCell({ day, period, existing });
+    setCellSubjectId(existing?.subjectId || (subjects[0]?.id ?? ""));
+    setCellTeacherId(existing?.teacherId || "");
+    setScheduleError("");
+    setCellModal(true);
+  };
+
+  // حفظ تعيين المادة في خلية الجدول
+  const handleSaveCell = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeCell || !selectedClassId || !cellSubjectId) return;
+    setCellLoading(true);
+    setScheduleError("");
+
+    try {
+      const res = await fetch("/api/admin/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          classId: selectedClassId,
+          dayOfWeek: activeCell.day,
+          period: activeCell.period,
+          subjectId: cellSubjectId,
+          teacherId: cellTeacherId || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "تعذر حفظ الحصة في الجدول.");
+      }
+
+      await fetchAllData();
+      setCellModal(false);
+      setActiveCell(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ أثناء حفظ الحصة.";
+      setScheduleError(msg);
+    } finally {
+      setCellLoading(false);
+    }
+  };
+
+  // حذف حصة من خلية الجدول
+  const handleDeleteCell = async (day: number, period: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("هل تؤكد تفريغ هذه الحصة من الجدول؟")) return;
+    try {
+      await fetch(`/api/admin/schedules?classId=${selectedClassId}&day=${day}&period=${period}`, {
+        method: "DELETE",
+      });
+      await fetchAllData();
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -446,14 +511,17 @@ export function ManagementDashboard({
     });
   };
 
+  // أيام الأسبوع من الأحد إلى الخميس (5 أيام)
   const daysList = [
     { id: 1, name: "الأحد" },
     { id: 2, name: "الإثنين" },
     { id: 3, name: "الثلاثاء" },
     { id: 4, name: "الأربعاء" },
     { id: 5, name: "الخميس" },
-    ...(settings.workingDays === 6 ? [{ id: 6, name: "السبت" }] : []),
   ];
+
+  // الحصص الـ 5 اليومية
+  const periodsList = [1, 2, 3, 4, 5];
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col selection:bg-slate-800 selection:text-white pb-10" dir="rtl">
@@ -548,40 +616,11 @@ export function ManagementDashboard({
 
             <div className="bg-white border border-slate-200 rounded-lg p-5">
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
-                العمليات الإدارية المباشرة
+                حالة النظام والاتصال
               </h3>
-              <div className="flex flex-wrap gap-2.5">
-                <Button
-                  onClick={() => setNewTeacherModal(true)}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
-                >
-                  <UserPlus className="w-3.5 h-3.5 ml-1.5" />
-                  إضافة معلم
-                </Button>
-                <Button
-                  onClick={() => setNewClassModal(true)}
-                  variant="outline"
-                  className="text-xs h-9 border-slate-300"
-                >
-                  <Plus className="w-3.5 h-3.5 ml-1.5" />
-                  إضافة شعبة
-                </Button>
-                <Button
-                  onClick={() => setNewStudentModal(true)}
-                  variant="outline"
-                  className="text-xs h-9 border-slate-300"
-                >
-                  <Plus className="w-3.5 h-3.5 ml-1.5" />
-                  تسجيل طالب
-                </Button>
-                <Button
-                  onClick={handlePromoteStudents}
-                  variant="secondary"
-                  className="text-xs h-9 bg-slate-100 text-slate-800 hover:bg-slate-200 border border-slate-200"
-                >
-                  <ArrowRightLeft className="w-3.5 h-3.5 ml-1.5" />
-                  ترحيل الطلاب لسنة جديدة
-                </Button>
+              <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-md">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>قاعدة بيانات سوبابيس (Supabase) متصلة وتعمل بصورة مباشرة وآمنة.</span>
               </div>
             </div>
           </div>
@@ -592,15 +631,18 @@ export function ManagementDashboard({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-bold text-slate-900">سجل الكادر التعليمي</h2>
-                <p className="text-xs text-slate-500">إضافة المعلمين ومزامنة حساباتهم في سوبابيس</p>
+                <h2 className="text-sm font-bold text-slate-900">سجل المعلمين والمدرسين</h2>
+                <p className="text-xs text-slate-500">إدارة حسابات الكادر وتعيين المواد والتواصل</p>
               </div>
               <Button
-                onClick={() => setNewTeacherModal(true)}
+                onClick={() => {
+                  setTeacherMsg(null);
+                  setNewTeacherModal(true);
+                }}
                 className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
               >
                 <UserPlus className="w-3.5 h-3.5 ml-1.5" />
-                إضافة معلم
+                إضافة معلم جديد
               </Button>
             </div>
 
@@ -636,7 +678,7 @@ export function ManagementDashboard({
                   {teachers.length === 0 && (
                     <tr>
                       <td colSpan={5} className="p-6 text-center text-slate-400">
-                        لا يوجد معلمون مسجلون بعد. اضغط على زر &quot;إضافة معلم&quot; لتسجيل أول معلم.
+                        لا يوجد معلمون مسجلون بعد. اضغط على زر &quot;إضافة معلم جديد&quot; لتسجيل أول معلم.
                       </td>
                     </tr>
                   )}
@@ -689,14 +731,17 @@ export function ManagementDashboard({
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-bold text-slate-900">سجل الطلاب المركزي</h2>
-                <p className="text-xs text-slate-500">بيانات الطلاب، أكواد الـ QR، ونقل الشعب</p>
+                <p className="text-xs text-slate-500">بيانات الطلاب، أكواد الـ QR، وأولياء الأمور</p>
               </div>
               <Button
-                onClick={() => setNewStudentModal(true)}
+                onClick={() => {
+                  setStudentMsg(null);
+                  setNewStudentModal(true);
+                }}
                 className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
               >
                 <Plus className="w-3.5 h-3.5 ml-1.5" />
-                تسجيل طالب
+                تسجيل طالب وولي أمر
               </Button>
             </div>
 
@@ -749,7 +794,7 @@ export function ManagementDashboard({
                   {students.length === 0 && (
                     <tr>
                       <td colSpan={6} className="p-6 text-center text-slate-400">
-                        لا يوجد طلاب مسجلون بعد. اضغط &quot;تسجيل طالب&quot; لإضافة أول طالب في المدرسة.
+                        لا يوجد طلاب مسجلون بعد. اضغط &quot;تسجيل طالب وولي أمر&quot; لإضافة أول طالب في المدرسة.
                       </td>
                     </tr>
                   )}
@@ -759,70 +804,123 @@ export function ManagementDashboard({
           </div>
         )}
 
-        {/* الجدول الأسبوعي */}
+        {/* الجدول الأسبوعي (الشبكة التفاعلية: الأحد إلى الخميس - 5 خلايا لكل يوم) */}
         {activeTab === "schedule" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">إدارة وتوزيع الجدول الأسبوعي</h2>
-                <p className="text-xs text-slate-500">منع تضارب الحصص آلياً في قاعدة البيانات</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">الجدول الأسبوعي التفاعلي</h2>
+                  <p className="text-xs text-slate-500">اختر الصف وانقر على أي حصة لتحديد المادة والمعلم فوراً</p>
+                </div>
               </div>
-              <Button
-                onClick={() => { setScheduleError(""); setNewScheduleModal(true); }}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
-              >
-                <Plus className="w-3.5 h-3.5 ml-1.5" />
-                إضافة حصة
-              </Button>
+
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-slate-700">الصف:</span>
+                  <select
+                    value={selectedClassId}
+                    onChange={(e) => setSelectedClassId(e.target.value)}
+                    className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-800"
+                  >
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.section})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <Button
+                  onClick={() => setSubjectsModal(true)}
+                  variant="outline"
+                  className="text-xs h-8 border-slate-300 gap-1.5"
+                >
+                  <BookMarked className="w-3.5 h-3.5 text-slate-700" />
+                  <span>إدارة المواد الدراسية</span>
+                </Button>
+              </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg p-3 overflow-x-auto shadow-xs">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
-                  <tr>
-                    <th className="p-3">اليوم</th>
-                    <th className="p-3">الحصة</th>
-                    <th className="p-3">الصف</th>
-                    <th className="p-3">المادة</th>
-                    <th className="p-3">المعلم</th>
-                    <th className="p-3 text-center">حذف</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {schedules.map((sc) => {
-                    const dayObj = daysList.find((d) => d.id === sc.day);
-                    return (
-                      <tr key={sc.id} className="hover:bg-slate-50/60">
-                        <td className="p-3 font-semibold text-slate-900">{dayObj ? dayObj.name : `اليوم ${sc.day}`}</td>
-                        <td className="p-3 text-slate-700">الحصة {sc.period}</td>
-                        <td className="p-3 text-slate-800">{sc.className}</td>
-                        <td className="p-3 text-slate-600">{sc.subject}</td>
-                        <td className="p-3 text-slate-600">{sc.teacherName}</td>
-                        <td className="p-3 text-center">
-                          <button
-                            onClick={async () => {
-                              const supabase = createClient();
-                              await supabase.from("weekly_schedules").delete().eq("id", sc.id);
-                              fetchAllData();
-                            }}
-                            className="text-slate-400 hover:text-rose-600 p-1"
-                            title="حذف الحصة"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {schedules.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="p-6 text-center text-slate-400">
-                        لا توجد حصص مسجلة في الجدول. اضغط &quot;إضافة حصة&quot; لتوزيع الجدول الأسبوعي.
-                      </td>
+            {/* شبكة الجدول الأسبوعي: 5 أيام × 5 حصص */}
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-center border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-700 font-bold">
+                      <th className="p-3.5 border-l border-slate-200 w-24">الحصة</th>
+                      {daysList.map((day) => (
+                        <th key={day.id} className="p-3.5 border-l border-slate-200 last:border-l-0 min-w-[140px]">
+                          {day.name}
+                        </th>
+                      ))}
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 text-xs">
+                    {periodsList.map((period) => (
+                      <tr key={period} className="hover:bg-slate-50/40">
+                        {/* رقم الحصة */}
+                        <td className="p-3 font-bold text-slate-700 bg-slate-50/70 border-l border-slate-200">
+                          الحصة {period}
+                        </td>
+
+                        {/* خلايا الأيام الـ 5 */}
+                        {daysList.map((day) => {
+                          const entry = schedules.find(
+                            (s) =>
+                              s.classId === selectedClassId &&
+                              s.day === day.id &&
+                              s.period === period
+                          );
+
+                          return (
+                            <td
+                              key={day.id}
+                              className="p-2 border-l border-slate-200 last:border-l-0 align-middle"
+                            >
+                              {entry ? (
+                                <div
+                                  onClick={() => openCellModal(day.id, period)}
+                                  className="group relative bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg p-2.5 cursor-pointer transition text-right shadow-2xs"
+                                  title="انقر لتعديل الحصة أو المادة"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-slate-900 text-xs">
+                                      {entry.subject}
+                                    </span>
+                                    <button
+                                      onClick={(e) => handleDeleteCell(day.id, period, e)}
+                                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition p-0.5"
+                                      title="حذف الحصة"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 mt-1 truncate">
+                                    {entry.teacherName || "بدون معلم"}
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openCellModal(day.id, period)}
+                                  className="w-full min-h-[58px] rounded-lg border border-dashed border-slate-300 hover:border-slate-800 hover:bg-slate-50 text-slate-400 hover:text-slate-800 flex flex-col items-center justify-center gap-1 transition p-2 cursor-pointer"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span className="text-[11px] font-medium">تحديد مادة</span>
+                                </button>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -848,75 +946,44 @@ export function ManagementDashboard({
         {activeTab === "settings" && (
           <div className="max-w-xl bg-white border border-slate-200 rounded-lg p-6 space-y-4 shadow-xs">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">إعدادات المدرسة المركزية</h2>
-              <p className="text-xs text-slate-500">حفظ الإعدادات وتوكن بوت التيليجرام في سوبابيس</p>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">اسم المدرسة:</label>
+              <input
+                type="text"
+                value={settings.schoolName}
+                onChange={(e) => setSettings({ ...settings, schoolName: e.target.value })}
+                className="w-full px-3 py-2 border rounded-md border-slate-300 text-xs"
+              />
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">اسم المدرسة:</label>
-                <input
-                  type="text"
-                  value={settings.schoolName}
-                  onChange={(e) => setSettings({ ...settings, schoolName: e.target.value })}
-                  className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">توكن بوت التيليجرام المشفر:</label>
+              <input
+                type="password"
+                value={settings.telegramBotToken}
+                onChange={(e) => setSettings({ ...settings, telegramBotToken: e.target.value })}
+                placeholder="••••••••••••••••••••"
+                className="w-full px-3 py-2 border rounded-md border-slate-300 text-xs font-mono"
+                dir="ltr"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">التوكن محمي ومشفر بالكامل ولا يمكن لأي طالب أو معلم قراءته.</p>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">أيام العمل في الأسبوع:</label>
-                  <select
-                    value={settings.workingDays}
-                    onChange={(e) => setSettings({ ...settings, workingDays: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900"
-                  >
-                    <option value={5}>5 أيام (الأحد إلى الخميس)</option>
-                    <option value={6}>6 أيام (السبت إلى الخميس)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">الحصص اليومية:</label>
-                  <select
-                    value={settings.periodsPerDay}
-                    onChange={(e) => setSettings({ ...settings, periodsPerDay: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900"
-                  >
-                    <option value={5}>5 حصص</option>
-                    <option value={6}>6 حصص</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-slate-100">
-                <label className="block text-slate-700 font-semibold mb-1">توكن بوت التيليجرام (Telegram Bot Token):</label>
-                <input
-                  type="password"
-                  value={settings.telegramBotToken}
-                  onChange={(e) => setSettings({ ...settings, telegramBotToken: e.target.value })}
-                  placeholder="أدخل رمز البوت لتفعيل التنبيهات المباشرة"
-                  className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900 font-mono text-xs"
-                />
-                <p className="text-[11px] text-slate-500 mt-1">التوكن محمي ومشفر بالكامل ولا يمكن لأي طالب أو معلم قراءته.</p>
-              </div>
-
-              <div className="pt-2">
-                <Button
-                  onClick={async () => {
-                    const supabase = createClient();
-                    await supabase.from("school_settings").upsert({
-                      school_name: settings.schoolName,
-                      working_days: settings.workingDays,
-                      periods_per_day: settings.periodsPerDay,
-                      telegram_bot_token: settings.telegramBotToken,
-                    });
-                    alert("تم حفظ الإعدادات في قاعدة البيانات بنجاح.");
-                  }}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
-                >
-                  حفظ التعديلات
-                </Button>
-              </div>
+            <div className="pt-2">
+              <Button
+                onClick={async () => {
+                  const supabase = createClient();
+                  await supabase.from("school_settings").upsert({
+                    school_name: settings.schoolName,
+                    working_days: settings.workingDays,
+                    periods_per_day: settings.periodsPerDay,
+                    telegram_bot_token: settings.telegramBotToken,
+                  });
+                  alert("تم حفظ الإعدادات في قاعدة البيانات بنجاح.");
+                }}
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
+              >
+                حفظ التعديلات
+              </Button>
             </div>
           </div>
         )}
@@ -925,44 +992,96 @@ export function ManagementDashboard({
       {/* نافذة إضافة معلم */}
       {newTeacherModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-sm p-5 shadow-lg">
-            <h3 className="font-bold text-sm text-slate-900 mb-3">إضافة معلم جديد</h3>
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="font-bold text-sm text-slate-900 mb-1">إضافة معلم جديد</h3>
+            <p className="text-xs text-slate-500 mb-4">إنشاء حساب رسمي للمعلم في سوبابيس وإسناد المادة له</p>
+
+            {teacherMsg && (
+              <div
+                className={`p-2.5 mb-3 rounded-lg text-xs flex items-center gap-2 ${
+                  teacherMsg.type === "success"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-rose-50 text-rose-700 border border-rose-200"
+                }`}
+              >
+                {teacherMsg.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+                <span>{teacherMsg.text}</span>
+              </div>
+            )}
+
             <form onSubmit={handleAddTeacher} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 mb-1">الاسم الثلاثي:</label>
+                <label className="block text-slate-700 font-semibold mb-1">الاسم الثلاثي للمعلم:</label>
                 <input
                   type="text"
                   required
                   value={newTeacherData.name}
                   onChange={(e) => setNewTeacherData({ ...newTeacherData, name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
+                  placeholder="مثال: أستاذ أحمد علي"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800"
                 />
               </div>
+
               <div>
-                <label className="block text-slate-700 mb-1">رقم الهاتف:</label>
+                <label className="block text-slate-700 font-semibold mb-1">رقم الهاتف:</label>
                 <input
                   type="text"
                   required
                   value={newTeacherData.phone}
                   onChange={(e) => setNewTeacherData({ ...newTeacherData, phone: e.target.value })}
-                  placeholder="+964..."
-                  className="w-full px-3 py-2 border rounded border-slate-300 font-mono"
+                  placeholder="07701234567"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-slate-800"
                   dir="ltr"
                 />
               </div>
+
               <div>
-                <label className="block text-slate-700 mb-1">المادة الدراسية:</label>
-                <input
-                  type="text"
-                  required
+                <label className="block text-slate-700 font-semibold mb-1">المادة الدراسية:</label>
+                <select
                   value={newTeacherData.subject}
                   onChange={(e) => setNewTeacherData({ ...newTeacherData, subject: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white"
+                >
+                  <option value="">اختر المادة...</option>
+                  {subjects.map((sub) => (
+                    <option key={sub.id} value={sub.name}>
+                      {sub.name}
+                    </option>
+                  ))}
+                  <option value="عام">عام / مادة أخرى</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">كلمة مرور الحساب (اختياري):</label>
+                <input
+                  type="password"
+                  value={newTeacherData.password}
+                  onChange={(e) => setNewTeacherData({ ...newTeacherData, password: e.target.value })}
+                  placeholder="تلقائياً نفس رقم الهاتف أو 123456"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-slate-800"
+                  dir="ltr"
                 />
               </div>
+
               <div className="flex justify-end gap-2 pt-3">
-                <Button type="button" variant="ghost" onClick={() => setNewTeacherModal(false)} className="text-xs h-8">إلغاء</Button>
-                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">حفظ المعلم</Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={teacherLoading}
+                  onClick={() => setNewTeacherModal(false)}
+                  className="text-xs h-8"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={teacherLoading}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                >
+                  {teacherLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{teacherLoading ? "جارٍ الحفظ..." : "حفظ وإضافة المعلم"}</span>
+                </Button>
               </div>
             </form>
           </div>
@@ -972,37 +1091,37 @@ export function ManagementDashboard({
       {/* نافذة إضافة صف */}
       {newClassModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-sm p-5 shadow-lg">
-            <h3 className="font-bold text-sm text-slate-900 mb-3">إضافة صف أو شعبة</h3>
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="font-bold text-sm text-slate-900 mb-3">إضافة شعبة دراسية</h3>
             <form onSubmit={handleAddClass} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 mb-1">اسم الصف:</label>
+                <label className="block text-slate-700 font-semibold mb-1">اسم الصف:</label>
                 <input
                   type="text"
                   required
                   value={newClassData.name}
                   onChange={(e) => setNewClassData({ ...newClassData, name: e.target.value })}
                   placeholder="مثال: الأول متوسط"
-                  className="w-full px-3 py-2 border rounded border-slate-300"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300"
                 />
               </div>
               <div>
-                <label className="block text-slate-700 mb-1">الشعبة:</label>
+                <label className="block text-slate-700 font-semibold mb-1">الشعبة:</label>
                 <input
                   type="text"
                   required
                   value={newClassData.section}
                   onChange={(e) => setNewClassData({ ...newClassData, section: e.target.value })}
                   placeholder="أ / ب / ج"
-                  className="w-full px-3 py-2 border rounded border-slate-300"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300"
                 />
               </div>
               <div>
-                <label className="block text-slate-700 mb-1">المرحلة:</label>
+                <label className="block text-slate-700 font-semibold mb-1">المرحلة:</label>
                 <select
                   value={newClassData.stage}
                   onChange={(e) => setNewClassData({ ...newClassData, stage: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white"
                 >
                   <option value="ابتدائية">ابتدائية</option>
                   <option value="متوسطة">متوسطة</option>
@@ -1011,35 +1130,52 @@ export function ManagementDashboard({
               </div>
               <div className="flex justify-end gap-2 pt-3">
                 <Button type="button" variant="ghost" onClick={() => setNewClassModal(false)} className="text-xs h-8">إلغاء</Button>
-                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">حفظ</Button>
+                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">حفظ الصف</Button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* نافذة تسجيل طالب */}
+      {/* نافذة تسجيل طالب وولي أمر */}
       {newStudentModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-sm p-5 shadow-lg">
-            <h3 className="font-bold text-sm text-slate-900 mb-3">تسجيل طالب جديد</h3>
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="font-bold text-sm text-slate-900 mb-1">تسجيل طالب وولي أمر</h3>
+            <p className="text-xs text-slate-500 mb-4">إنشاء حساب الطالب وكود الـ QR وربطه بولي الأمر</p>
+
+            {studentMsg && (
+              <div
+                className={`p-2.5 mb-3 rounded-lg text-xs flex items-center gap-2 ${
+                  studentMsg.type === "success"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-rose-50 text-rose-700 border border-rose-200"
+                }`}
+              >
+                {studentMsg.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+                <span>{studentMsg.text}</span>
+              </div>
+            )}
+
             <form onSubmit={handleAddStudent} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 mb-1">اسم الطالب الرباعي:</label>
+                <label className="block text-slate-700 font-semibold mb-1">اسم الطالب الرباعي:</label>
                 <input
                   type="text"
                   required
                   value={newStudentData.name}
                   onChange={(e) => setNewStudentData({ ...newStudentData, name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
+                  placeholder="مثال: علي محمد حسن الكرخي"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800"
                 />
               </div>
+
               <div>
-                <label className="block text-slate-700 mb-1">الصف والشعبة:</label>
+                <label className="block text-slate-700 font-semibold mb-1">الصف والشعبة:</label>
                 <select
                   value={newStudentData.classId}
                   onChange={(e) => setNewStudentData({ ...newStudentData, classId: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white"
                   required
                 >
                   <option value="">اختر الصف...</option>
@@ -1050,78 +1186,155 @@ export function ManagementDashboard({
                   ))}
                 </select>
               </div>
+
               <div>
-                <label className="block text-slate-700 mb-1">اسم ولي الأمر:</label>
+                <label className="block text-slate-700 font-semibold mb-1">اسم ولي الأمر:</label>
                 <input
                   type="text"
                   value={newStudentData.parentName}
                   onChange={(e) => setNewStudentData({ ...newStudentData, parentName: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
+                  placeholder="مثال: محمد حسن الكرخي"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800"
                 />
               </div>
+
               <div>
-                <label className="block text-slate-700 mb-1">هاتف ولي الأمر:</label>
+                <label className="block text-slate-700 font-semibold mb-1">رقم هاتف ولي الأمر:</label>
                 <input
                   type="text"
                   value={newStudentData.parentPhone}
                   onChange={(e) => setNewStudentData({ ...newStudentData, parentPhone: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300 font-mono"
+                  placeholder="07801234567"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 font-mono focus:outline-none focus:ring-1 focus:ring-slate-800"
                   dir="ltr"
                 />
               </div>
+
               <div className="flex justify-end gap-2 pt-3">
-                <Button type="button" variant="ghost" onClick={() => setNewStudentModal(false)} className="text-xs h-8">إلغاء</Button>
-                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">تأكيد التسجيل</Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={studentLoading}
+                  onClick={() => setNewStudentModal(false)}
+                  className="text-xs h-8"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={studentLoading}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                >
+                  {studentLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{studentLoading ? "جارٍ التسجيل..." : "تأكيد تسجيل الطالب"}</span>
+                </Button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* نافذة إضافة حصة */}
-      {newScheduleModal && (
+      {/* نافذة إدارة المواد الدراسية */}
+      {subjectsModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-sm p-5 shadow-lg">
-            <h3 className="font-bold text-sm text-slate-900 mb-2">إضافة حصة بالجدول</h3>
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900">إدارة المواد الدراسية</h3>
+                <p className="text-xs text-slate-500">إضافة مواد جديدة لربطها بجدول الحصص الأسبوعي</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSubjectsModal(false)}
+                className="text-xs h-7"
+              >
+                إغلاق
+              </Button>
+            </div>
+
+            {/* نموذج إضافة مادة جديدة */}
+            <form onSubmit={handleAddSubject} className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={newSubjectName}
+                onChange={(e) => setNewSubjectName(e.target.value)}
+                placeholder="اكتب اسم المادة الجديدة (مثال: الفيزياء، الحاسوب...)"
+                required
+                className="flex-1 px-3 py-2 border rounded-lg border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-slate-800"
+              />
+              <Button
+                type="submit"
+                disabled={subjectLoading}
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 shrink-0 gap-1"
+              >
+                {subjectLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                <span>إضافة مادة</span>
+              </Button>
+            </form>
+
+            {/* قائمة المواد المسجلة */}
+            <div className="border border-slate-200 rounded-lg p-3 max-h-60 overflow-y-auto space-y-1.5">
+              <span className="text-[11px] font-bold text-slate-500 block mb-2">المواد المتاحة في المدرسة:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {subjects.map((sub) => (
+                  <span
+                    key={sub.id}
+                    className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200"
+                  >
+                    {sub.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة تحديد مادة ومعلم لخلية في الجدول */}
+      {cellModal && activeCell && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="font-bold text-sm text-slate-900 mb-1">
+              تحديد مادة الحصة
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              {daysList.find((d) => d.id === activeCell.day)?.name} • الحصة {activeCell.period}
+            </p>
+
             {scheduleError && (
-              <div className="p-2.5 mb-3 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-1.5">
+              <div className="p-2.5 mb-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>{scheduleError}</span>
               </div>
             )}
-            <form onSubmit={handleAddSchedule} className="space-y-3 text-xs">
+
+            <form onSubmit={handleSaveCell} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 mb-1">الصف:</label>
+                <label className="block text-slate-700 font-semibold mb-1">المادة الدراسية:</label>
                 <select
-                  value={newScheduleData.classId}
-                  onChange={(e) => setNewScheduleData({ ...newScheduleData, classId: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
+                  value={cellSubjectId}
+                  onChange={(e) => setCellSubjectId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white"
                   required
                 >
-                  <option value="">اختر الصف...</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.section})
+                  <option value="">اختر المادة...</option>
+                  {subjects.map((sub) => (
+                    <option key={sub.id} value={sub.id}>
+                      {sub.name}
                     </option>
                   ))}
                 </select>
               </div>
+
               <div>
-                <label className="block text-slate-700 mb-1">المعلم:</label>
+                <label className="block text-slate-700 font-semibold mb-1">المعلم المسند (اختياري):</label>
                 <select
-                  value={newScheduleData.teacherId}
-                  onChange={(e) => {
-                    const selT = teachers.find((t) => t.id === e.target.value);
-                    setNewScheduleData({
-                      ...newScheduleData,
-                      teacherId: e.target.value,
-                      subject: selT ? selT.subject : "عام",
-                    });
-                  }}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
-                  required
+                  value={cellTeacherId}
+                  onChange={(e) => setCellTeacherId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white"
                 >
-                  <option value="">اختر المعلم...</option>
+                  <option value="">بدون معلم محدد حالياً</option>
                   {teachers.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name} ({t.subject})
@@ -1129,35 +1342,25 @@ export function ManagementDashboard({
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-slate-700 mb-1">اليوم:</label>
-                  <select
-                    value={newScheduleData.day}
-                    onChange={(e) => setNewScheduleData({ ...newScheduleData, day: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border rounded border-slate-300"
-                  >
-                    {daysList.map((d) => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-slate-700 mb-1">الحصة:</label>
-                  <select
-                    value={newScheduleData.period}
-                    onChange={(e) => setNewScheduleData({ ...newScheduleData, period: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border rounded border-slate-300"
-                  >
-                    {Array.from({ length: settings.periodsPerDay }, (_, i) => i + 1).map((p) => (
-                      <option key={p} value={p}>الحصة {p}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+
               <div className="flex justify-end gap-2 pt-3">
-                <Button type="button" variant="ghost" onClick={() => setNewScheduleModal(false)} className="text-xs h-8">إلغاء</Button>
-                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">تثبيت</Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={cellLoading}
+                  onClick={() => setCellModal(false)}
+                  className="text-xs h-8"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={cellLoading}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                >
+                  {cellLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{cellLoading ? "جارٍ الحفظ..." : "تثبيت الحصة"}</span>
+                </Button>
               </div>
             </form>
           </div>
