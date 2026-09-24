@@ -19,11 +19,31 @@ export default function DashboardPage() {
 
     async function loadAuthorizedUser() {
       try {
-        const supabase = createClient();
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        // فحص الكوكيز أولاً (للدخول المباشر بكلمة المرور)
+        const getCookie = (name: string) => {
+          const value = `; ${document.cookie}`;
+          const parts = value.split(`; ${name}=`);
+          if (parts.length === 2) return parts.pop()?.split(";").shift();
+          return null;
+        };
 
-        if (sessionError || !session?.user) {
-          // إذا لم يكن هناك جلسة إطلاقاً، تحويل مباشر إلى شاشة الدخول
+        const cookieRole = getCookie("auth_role") as "director" | "vice_director" | "teacher" | "student" | "parent" | null;
+        const cookieName = getCookie("auth_name");
+
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (cookieRole) {
+          if (isMounted) {
+            setRole(cookieRole);
+            setUserName(cookieName ? decodeURIComponent(cookieName) : "الإدارة العامة");
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (!session?.user) {
+          // إذا لم يكن هناك جلسة ولا كوكيز، تحويل مباشر إلى شاشة الدخول
           window.location.replace("/login");
           return;
         }
@@ -31,7 +51,6 @@ export default function DashboardPage() {
         const userEmail = session.user.email || "";
         const userFullName = session.user.user_metadata?.full_name || userEmail.split("@")[0] || "المدير";
 
-        // محاولة جلب الملف الشخصي والدور من سوبابيس
         let userRole: "director" | "vice_director" | "teacher" | "student" | "parent" = "director";
         let resolvedName = userFullName;
 

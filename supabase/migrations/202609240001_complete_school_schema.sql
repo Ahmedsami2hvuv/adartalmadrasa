@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     role user_role NOT NULL DEFAULT 'student',
     full_name TEXT NOT NULL,
     phone TEXT,
+    password TEXT,
     national_id TEXT,
     avatar_url TEXT,
     is_active BOOLEAN NOT NULL DEFAULT true,
