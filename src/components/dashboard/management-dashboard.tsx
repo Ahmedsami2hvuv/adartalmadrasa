@@ -121,6 +121,7 @@ export function ManagementDashboard({
 
   const [newStudentModal, setNewStudentModal] = useState(false);
   const [newStudentData, setNewStudentData] = useState({ name: "", classId: "", parentName: "", parentPhone: "" });
+  const [selectedGradeName, setSelectedGradeName] = useState<string>("");
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentMsg, setStudentMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -406,6 +407,10 @@ export function ManagementDashboard({
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStudentData.name.trim()) return;
+    if (!newStudentData.classId) {
+      setStudentMsg({ type: "error", text: "يرجى تحديد الصف واختيار الشعبة للطالب." });
+      return;
+    }
     setStudentLoading(true);
     setStudentMsg(null);
 
@@ -413,10 +418,7 @@ export function ManagementDashboard({
       const res = await fetch("/api/admin/students", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...newStudentData,
-          classId: newStudentData.classId || classes[0]?.id,
-        }),
+        body: JSON.stringify(newStudentData),
       });
 
       const data = await res.json();
@@ -426,6 +428,7 @@ export function ManagementDashboard({
 
       setStudentMsg({ type: "success", text: `تم تسجيل الطالب (${data.student.name}) وتوليد كود الـ QR بنجاح!` });
       setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
+      setSelectedGradeName("");
       fetchAllData();
       setTimeout(() => {
         setNewStudentModal(false);
@@ -958,6 +961,8 @@ export function ManagementDashboard({
               <Button
                 onClick={() => {
                   setStudentMsg(null);
+                  setSelectedGradeName("");
+                  setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
                   setNewStudentModal(true);
                 }}
                 className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
@@ -1762,26 +1767,10 @@ export function ManagementDashboard({
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">الصف والشعبة:</label>
-                <select
-                  value={newStudentData.classId}
-                  onChange={(e) => setNewStudentData({ ...newStudentData, classId: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white"
-                  required
-                >
-                  <option value="">اختر الصف...</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.section})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
                 <label className="block text-slate-700 font-semibold mb-1">اسم ولي الأمر:</label>
                 <input
                   type="text"
+                  required
                   value={newStudentData.parentName}
                   onChange={(e) => setNewStudentData({ ...newStudentData, parentName: e.target.value })}
                   placeholder="مثال: محمد حسن الكرخي"
@@ -1793,6 +1782,7 @@ export function ManagementDashboard({
                 <label className="block text-slate-700 font-semibold mb-1">رقم هاتف ولي الأمر:</label>
                 <input
                   type="text"
+                  required
                   value={newStudentData.parentPhone}
                   onChange={(e) => setNewStudentData({ ...newStudentData, parentPhone: e.target.value })}
                   placeholder="مثال: 07801234567 أو +964 780 123 4567 أو بالعربي"
@@ -1801,6 +1791,71 @@ export function ManagementDashboard({
                 />
                 <p className="text-[10px] text-slate-500 mt-1">يقبل كافة الصيغ العربية والإنجليزية ويضبطه للواتساب تلقائياً.</p>
               </div>
+
+              {/* اختيار الصف أولاً */}
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">الصف الدراسي:</label>
+                <select
+                  value={selectedGradeName}
+                  onChange={(e) => {
+                    const grade = e.target.value;
+                    setSelectedGradeName(grade);
+                    const matchedSections = classes.filter((c) => c.name === grade);
+                    if (matchedSections.length === 1) {
+                      setNewStudentData((prev) => ({ ...prev, classId: matchedSections[0].id }));
+                    } else {
+                      setNewStudentData((prev) => ({ ...prev, classId: "" }));
+                    }
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white"
+                  required
+                >
+                  <option value="">-- اضغط هنا لاختيار الصف --</option>
+                  {Array.from(new Set(classes.map((c) => c.name))).map((gradeName) => (
+                    <option key={gradeName} value={gradeName}>
+                      {gradeName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* ظهور خيارات الشعبة فور اختيار الصف */}
+              {selectedGradeName && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg animate-in fade-in duration-200">
+                  <label className="block text-slate-700 font-semibold mb-2">
+                    خيارات شعب صف ({selectedGradeName}):
+                  </label>
+                  {classes.filter((c) => c.name === selectedGradeName).length === 0 ? (
+                    <p className="text-[11px] text-amber-600">لا توجد شعب مسجلة لهذا الصف حالياً في النظام.</p>
+                  ) : (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {classes
+                        .filter((c) => c.name === selectedGradeName)
+                        .map((sec) => {
+                          const isSelected = newStudentData.classId === sec.id;
+                          return (
+                            <button
+                              key={sec.id}
+                              type="button"
+                              onClick={() => setNewStudentData((prev) => ({ ...prev, classId: sec.id }))}
+                              className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 border cursor-pointer ${
+                                isSelected
+                                  ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400"
+                              }`}
+                            >
+                              <span>شعبة {sec.section}</span>
+                              {isSelected && <span className="text-[11px] text-emerald-300">✓</span>}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  )}
+                  {!newStudentData.classId && classes.filter((c) => c.name === selectedGradeName).length > 0 && (
+                    <p className="text-[11px] text-rose-500 mt-2 font-medium">⚠️ اضغط على الشعبة المطلوبة لتحديدها للطالب.</p>
+                  )}
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-3">
                 <Button
