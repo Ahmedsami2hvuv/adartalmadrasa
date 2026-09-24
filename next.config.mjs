@@ -31,30 +31,12 @@ const withPWA = withPWAInit({
         },
       },
     },
-    {
-      urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/(weekly_schedules|grades|classes|subjects).*/i,
-      handler: "NetworkFirst",
-      options: {
-        cacheName: "supabase-offline-data",
-        networkTimeoutSeconds: 5,
-        expiration: {
-          maxEntries: 50,
-          maxAgeSeconds: 24 * 60 * 60,
-        },
-      },
-    },
   ],
 });
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
 };
 
 export default withPWA(nextConfig);

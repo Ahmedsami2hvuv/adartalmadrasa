@@ -1,12 +1,12 @@
 -- =====================================================
--- نظام إدارة المدرسة المتكامل - قاعدة بيانات سوبابيس (Supabase SQL Schema)
--- يتضمن الجداول والعلاقات وسياسات الأمان على مستوى الصفوف (RLS)
+-- نظام إدارة المدرسة المتقدم - قاعدة بيانات سوبابيس (Supabase SQL Schema)
+-- النسخة الآمنة والمحصنة ضد تصعيد الصلاحيات وكشف المفاتيح
 -- =====================================================
 
 -- 1. تمكين امتدادات UUID
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. إنشاء نوع مخصص للأدوار (Roles)
+-- 2. نوع الأدوار المعتمد
 DO $$ BEGIN
     CREATE TYPE user_role AS ENUM ('director', 'vice_director', 'teacher', 'student', 'parent');
 EXCEPTION
@@ -31,15 +31,16 @@ CREATE TABLE IF NOT EXISTS public.classes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,          -- مثل: "الأول متوسط", "الخامس العلمي"
     section TEXT NOT NULL,       -- مثل: "أ", "ب", "ج"
-    stage TEXT NOT NULL,         -- مثل: "ابتدائي", "متوسط", "إعدادي"
+    stage TEXT NOT NULL,         -- مثل: "ابتدائية", "متوسطة", "إعدادية"
     academic_year TEXT NOT NULL DEFAULT '2025-2026',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT unique_class_section UNIQUE (name, section, academic_year)
 );
 
 -- 5. جدول أولياء الأمور (parents)
 CREATE TABLE IF NOT EXISTS public.parents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    profile_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    profile_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE UNIQUE,
     job_title TEXT,
     alternative_phone TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -48,7 +49,7 @@ CREATE TABLE IF NOT EXISTS public.parents (
 -- 6. جدول المعلمين (teachers)
 CREATE TABLE IF NOT EXISTS public.teachers (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    profile_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    profile_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE UNIQUE,
     specialization TEXT,
     subjects TEXT[] DEFAULT '{}',
     classes UUID[] DEFAULT '{}',
@@ -58,15 +59,15 @@ CREATE TABLE IF NOT EXISTS public.teachers (
 -- 7. جدول المواد الدراسية (subjects)
 CREATE TABLE IF NOT EXISTS public.subjects (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT NOT NULL,          -- مثل: "الرياضيات", "اللغة العربية"
-    stage TEXT,                  -- اختياري: مرحلة المادة
+    name TEXT NOT NULL UNIQUE,
+    stage TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 8. جدول الطلاب (students)
 CREATE TABLE IF NOT EXISTS public.students (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    profile_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    profile_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE UNIQUE,
     class_id UUID REFERENCES public.classes(id) ON DELETE SET NULL,
     parent_id UUID REFERENCES public.parents(id) ON DELETE SET NULL,
     qr_code TEXT UNIQUE NOT NULL,
@@ -81,12 +82,11 @@ CREATE TABLE IF NOT EXISTS public.weekly_schedules (
     class_id UUID NOT NULL REFERENCES public.classes(id) ON DELETE CASCADE,
     teacher_id UUID NOT NULL REFERENCES public.teachers(id) ON DELETE CASCADE,
     subject_id UUID NOT NULL REFERENCES public.subjects(id) ON DELETE CASCADE,
-    day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 1 AND 7), -- 1: الأحد, 2: الاثنين ...
-    period SMALLINT NOT NULL CHECK (period BETWEEN 1 AND 8),             -- الحصة من 1 إلى 5 أو 8
+    day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 1 AND 7), -- 1: الأحد ...
+    period SMALLINT NOT NULL CHECK (period BETWEEN 1 AND 8),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    -- منع التضارب: لا يمكن لمعلم أن يدرس صفين في نفس الحصة واليوم
+    -- منع التضارب للمدرس والصف
     CONSTRAINT unique_teacher_time UNIQUE (teacher_id, day_of_week, period),
-    -- منع التضارب: لا يمكن للصف أن يدرس حصتين في نفس الوقت
     CONSTRAINT unique_class_time UNIQUE (class_id, day_of_week, period)
 );
 
@@ -159,7 +159,7 @@ CREATE TABLE IF NOT EXISTS public.homework_submissions (
 CREATE TABLE IF NOT EXISTS public.installments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,         -- مثل: "القسط الأول", "قسط النقل"
+    title TEXT NOT NULL,
     amount NUMERIC(10,2) NOT NULL,
     paid_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
     due_date DATE NOT NULL,
@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS public.installments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 16. جدول طلبات الإجازة للطلاب (leave_requests)
+-- 16. جدول طلبات الإجازة (leave_requests)
 CREATE TABLE IF NOT EXISTS public.leave_requests (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
@@ -222,24 +222,18 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 -- 20. جدول إعدادات المدرسة (school_settings)
 CREATE TABLE IF NOT EXISTS public.school_settings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_name TEXT NOT NULL DEFAULT 'المدرسة الذكية النموذجية',
-    working_days SMALLINT NOT NULL DEFAULT 5, -- 5 أو 6 أيام عمل
-    periods_per_day SMALLINT NOT NULL DEFAULT 5, -- 5 حصص
+    school_name TEXT NOT NULL DEFAULT 'المدرسة الذكية',
+    working_days SMALLINT NOT NULL DEFAULT 5,
+    periods_per_day SMALLINT NOT NULL DEFAULT 5,
     telegram_bot_token TEXT,
     telegram_director_chat_id TEXT,
-    telegram_channel_id TEXT,
     academic_year TEXT NOT NULL DEFAULT '2025-2026',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- وضع صف إعدادات افتراضي للمدرسة إذا لم يكن موجوداً
-INSERT INTO public.school_settings (school_name, working_days, periods_per_day)
-SELECT 'المدرسة الذكية النموذجية', 5, 5
-WHERE NOT EXISTS (SELECT 1 FROM public.school_settings);
-
 -- =====================================================
--- دوال مساعدة لسياسات الأمان RLS
+-- الدوال المساعدة لسياسات الأمان RLS
 -- =====================================================
 
 CREATE OR REPLACE FUNCTION public.current_user_role()
@@ -267,6 +261,24 @@ RETURNS UUID AS $$
     SELECT id FROM public.parents WHERE profile_id = auth.uid();
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
+-- =====================================================
+-- حماية أمنية حاسمة: منع تغيير الدور لغير المدير (Anti Role-Escalation)
+-- =====================================================
+CREATE OR REPLACE FUNCTION public.prevent_role_tampering()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.role IS DISTINCT FROM NEW.role AND NOT public.is_management() THEN
+        RAISE EXCEPTION 'أمان النظام: غير مصرح لك بتغيير صلاحيات حسابك أو ترقية الدور.';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_prevent_role_tampering ON public.profiles;
+CREATE TRIGGER trg_prevent_role_tampering
+    BEFORE UPDATE ON public.profiles
+    FOR EACH ROW EXECUTE FUNCTION public.prevent_role_tampering();
+
 -- تفعيل RLS على جميع الجداول
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.classes ENABLE ROW LEVEL SECURITY;
@@ -288,272 +300,130 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.school_settings ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
--- سياسات RLS: profiles
+-- سياسات RLS المحصنة
 -- =====================================================
-CREATE POLICY "المستخدم يرى حسابه أو الإدارة ترى الجميع" ON public.profiles
+
+-- 1. profiles: المستخدم يحدث بياناته الشخصية (الاسم، الهاتف) ولا يستطيع تغيير دوره
+DROP POLICY IF EXISTS "المستخدم يرى حسابه أو الإدارة ترى الجميع" ON public.profiles;
+DROP POLICY IF EXISTS "المستخدم يحدث حسابه أو الإدارة" ON public.profiles;
+DROP POLICY IF EXISTS "الإدارة تنشئ وتحذف الحسابات" ON public.profiles;
+
+CREATE POLICY "قراءة الحسابات" ON public.profiles
     FOR SELECT USING (auth.uid() = id OR public.is_management() OR current_user_role() = 'teacher');
 
-CREATE POLICY "المستخدم يحدث حسابه أو الإدارة" ON public.profiles
+CREATE POLICY "تحديث الحساب الشخصي" ON public.profiles
     FOR UPDATE USING (auth.uid() = id OR public.is_management());
 
-CREATE POLICY "الإدارة تنشئ وتحذف الحسابات" ON public.profiles
+CREATE POLICY "إدارة الحسابات للمدير" ON public.profiles
     FOR ALL USING (public.is_management());
 
--- =====================================================
--- سياسات RLS: classes & subjects
--- =====================================================
-CREATE POLICY "الجميع يقرأ الصفوف والمواد" ON public.classes
-    FOR SELECT TO authenticated USING (true);
+-- 2. school_settings: حماية توكن التيليجرام من الطلاب والمعلمين
+DROP POLICY IF EXISTS "الجميع يقرأ إعدادات المدرسة" ON public.school_settings;
+DROP POLICY IF EXISTS "الإدارة تعدل إعدادات المدرسة" ON public.school_settings;
 
-CREATE POLICY "الإدارة تدير الصفوف" ON public.classes
+-- الإدارة فقط ترى التوكن وتعدل
+CREATE POLICY "الإدارة تدير إعدادات المدرسة بالكامل" ON public.school_settings
     FOR ALL USING (public.is_management());
 
-CREATE POLICY "الجميع يقرأ المواد" ON public.subjects
-    FOR SELECT TO authenticated USING (true);
+-- المستخدم العادي يرى اسم المدرسة وأيام العمل فقط
+CREATE OR REPLACE VIEW public.public_school_info AS
+    SELECT school_name, working_days, periods_per_day, academic_year
+    FROM public.school_settings
+    LIMIT 1;
 
-CREATE POLICY "الإدارة تدير المواد" ON public.subjects
-    FOR ALL USING (public.is_management());
+-- 3. الجداول الأخرى
+CREATE POLICY "قراءة الصفوف" ON public.classes FOR SELECT TO authenticated USING (true);
+CREATE POLICY "إدارة الصفوف" ON public.classes FOR ALL USING (public.is_management());
 
--- =====================================================
--- سياسات RLS: teachers & parents & students
--- =====================================================
-CREATE POLICY "قراءة بيانات المعلمين" ON public.teachers
-    FOR SELECT TO authenticated USING (true);
+CREATE POLICY "قراءة المواد" ON public.subjects FOR SELECT TO authenticated USING (true);
+CREATE POLICY "إدارة المواد" ON public.subjects FOR ALL USING (public.is_management());
 
-CREATE POLICY "الإدارة تدير المعلمين" ON public.teachers
-    FOR ALL USING (public.is_management());
+CREATE POLICY "قراءة المعلمين" ON public.teachers FOR SELECT TO authenticated USING (true);
+CREATE POLICY "إدارة المعلمين" ON public.teachers FOR ALL USING (public.is_management());
 
-CREATE POLICY "قراءة بيانات الطلاب" ON public.students
-    FOR SELECT TO authenticated USING (
-        public.is_management()
-        OR current_user_role() = 'teacher'
-        OR profile_id = auth.uid()
-        OR parent_id = public.current_parent_id()
-    );
+CREATE POLICY "قراءة الطلاب" ON public.students FOR SELECT TO authenticated USING (
+    public.is_management()
+    OR current_user_role() = 'teacher'
+    OR profile_id = auth.uid()
+    OR parent_id = public.current_parent_id()
+);
+CREATE POLICY "إدارة الطلاب" ON public.students FOR ALL USING (public.is_management());
 
-CREATE POLICY "الإدارة تدير الطلاب" ON public.students
-    FOR ALL USING (public.is_management());
+CREATE POLICY "قراءة الجداول" ON public.weekly_schedules FOR SELECT TO authenticated USING (true);
+CREATE POLICY "إدارة الجداول" ON public.weekly_schedules FOR ALL USING (public.is_management());
 
-CREATE POLICY "قراءة بيانات أولياء الأمور" ON public.parents
-    FOR SELECT TO authenticated USING (
-        public.is_management()
-        OR current_user_role() = 'teacher'
-        OR profile_id = auth.uid()
-    );
+CREATE POLICY "قراءة الحضور" ON public.attendances FOR SELECT TO authenticated USING (
+    public.is_management()
+    OR teacher_id = public.current_teacher_id()
+    OR student_id = public.current_student_id()
+    OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
+);
+CREATE POLICY "تسجيل وتعديل الحضور" ON public.attendances FOR ALL TO authenticated USING (
+    public.is_management() OR teacher_id = public.current_teacher_id()
+);
 
-CREATE POLICY "الإدارة تدير أولياء الأمور" ON public.parents
-    FOR ALL USING (public.is_management());
+CREATE POLICY "قراءة الدرجات" ON public.grades FOR SELECT TO authenticated USING (
+    public.is_management()
+    OR current_user_role() = 'teacher'
+    OR student_id = public.current_student_id()
+    OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
+);
+CREATE POLICY "إدارة الدرجات" ON public.grades FOR ALL TO authenticated USING (
+    public.is_management() OR current_user_role() = 'teacher'
+);
 
--- =====================================================
--- سياسات RLS: weekly_schedules
--- =====================================================
-CREATE POLICY "الجميع يقرأ الجداول الدراسية" ON public.weekly_schedules
-    FOR SELECT TO authenticated USING (true);
+CREATE POLICY "الواجبات" ON public.homeworks FOR SELECT TO authenticated USING (true);
+CREATE POLICY "إدارة الواجبات" ON public.homeworks FOR ALL TO authenticated USING (
+    public.is_management() OR teacher_id = public.current_teacher_id()
+);
 
-CREATE POLICY "الإدارة تدير الجداول الدراسية" ON public.weekly_schedules
-    FOR ALL USING (public.is_management());
+CREATE POLICY "تسليمات الواجبات" ON public.homework_submissions FOR ALL TO authenticated USING (
+    public.is_management()
+    OR current_user_role() = 'teacher'
+    OR student_id = public.current_student_id()
+);
 
--- =====================================================
--- سياسات RLS: attendances
--- =====================================================
-CREATE POLICY "عرض الحضور والغياب" ON public.attendances
-    FOR SELECT TO authenticated USING (
-        public.is_management()
-        OR teacher_id = public.current_teacher_id()
-        OR student_id = public.current_student_id()
-        OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
-    );
+CREATE POLICY "الأقساط" ON public.installments FOR ALL TO authenticated USING (
+    public.is_management()
+    OR student_id = public.current_student_id()
+    OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
+);
 
-CREATE POLICY "المعلم والإدارة يسجلان الحضور" ON public.attendances
-    FOR INSERT TO authenticated WITH CHECK (
-        public.is_management() OR teacher_id = public.current_teacher_id()
-    );
+CREATE POLICY "الإجازات" ON public.leave_requests FOR ALL TO authenticated USING (
+    public.is_management()
+    OR student_id = public.current_student_id()
+    OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
+);
 
-CREATE POLICY "المعلم والإدارة يعدلان الحضور" ON public.attendances
-    FOR UPDATE TO authenticated USING (
-        public.is_management() OR teacher_id = public.current_teacher_id()
-    );
+CREATE POLICY "المواعيد" ON public.parent_appointments FOR ALL TO authenticated USING (
+    public.is_management()
+    OR parent_id = public.current_parent_id()
+    OR teacher_id = public.current_teacher_id()
+);
 
-CREATE POLICY "الإدارة تحذف الحضور" ON public.attendances
-    FOR DELETE TO authenticated USING (public.is_management());
-
--- =====================================================
--- سياسات RLS: grades
--- =====================================================
-CREATE POLICY "عرض الدرجات" ON public.grades
-    FOR SELECT TO authenticated USING (
-        public.is_management()
-        OR current_user_role() = 'teacher'
-        OR student_id = public.current_student_id()
-        OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
-    );
-
-CREATE POLICY "المعلم والإدارة يضيفان ويعدلان الدرجات" ON public.grades
-    FOR ALL TO authenticated USING (
-        public.is_management() OR current_user_role() = 'teacher'
-    );
+CREATE POLICY "الخطط اليومية" ON public.daily_lesson_plans FOR ALL TO authenticated USING (
+    public.is_management() OR teacher_id = public.current_teacher_id()
+);
 
 -- =====================================================
--- سياسات RLS: behavior_notes
+-- بيانات أولية تأسيسية جاهزة للعمل فوراً (Seed Data)
 -- =====================================================
-CREATE POLICY "عرض الملاحظات السلوكية" ON public.behavior_notes
-    FOR SELECT TO authenticated USING (
-        public.is_management()
-        OR teacher_id = public.current_teacher_id()
-        OR student_id = public.current_student_id()
-        OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
-    );
+INSERT INTO public.school_settings (school_name, working_days, periods_per_day)
+SELECT 'المدرسة النموذجية الحديثة', 5, 5
+WHERE NOT EXISTS (SELECT 1 FROM public.school_settings);
 
-CREATE POLICY "المعلم والإدارة يكتبان الملاحظات السلوكية" ON public.behavior_notes
-    FOR ALL TO authenticated USING (
-        public.is_management() OR teacher_id = public.current_teacher_id()
-    );
+INSERT INTO public.subjects (name) VALUES
+    ('الرياضيات'),
+    ('اللغة العربية'),
+    ('العلوم'),
+    ('اللغة الإنجليزية'),
+    ('التربية الإسلامية'),
+    ('الاجتماعيات')
+ON CONFLICT (name) DO NOTHING;
 
--- =====================================================
--- سياسات RLS: homeworks & homework_submissions
--- =====================================================
-CREATE POLICY "الجميع في المدرسة يرى الواجبات" ON public.homeworks
-    FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "المعلم والإدارة يضيفان الواجبات" ON public.homeworks
-    FOR ALL TO authenticated USING (
-        public.is_management() OR teacher_id = public.current_teacher_id()
-    );
-
-CREATE POLICY "رؤية تسليمات الواجبات" ON public.homework_submissions
-    FOR SELECT TO authenticated USING (
-        public.is_management()
-        OR current_user_role() = 'teacher'
-        OR student_id = public.current_student_id()
-        OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
-    );
-
-CREATE POLICY "الطالب يسلم واجبه" ON public.homework_submissions
-    FOR INSERT TO authenticated WITH CHECK (
-        student_id = public.current_student_id()
-    );
-
-CREATE POLICY "المعلم يقيم ويسجل درجة الواجب" ON public.homework_submissions
-    FOR UPDATE TO authenticated USING (
-        public.is_management() OR current_user_role() = 'teacher' OR student_id = public.current_student_id()
-    );
-
--- =====================================================
--- سياسات RLS: installments
--- =====================================================
-CREATE POLICY "عرض الأقساط" ON public.installments
-    FOR SELECT TO authenticated USING (
-        public.is_management()
-        OR student_id = public.current_student_id()
-        OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
-    );
-
-CREATE POLICY "الإدارة تدير الأقساط" ON public.installments
-    FOR ALL USING (public.is_management());
-
--- =====================================================
--- سياسات RLS: leave_requests
--- =====================================================
-CREATE POLICY "عرض طلبات الإجازة" ON public.leave_requests
-    FOR SELECT TO authenticated USING (
-        public.is_management()
-        OR student_id = public.current_student_id()
-        OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
-    );
-
-CREATE POLICY "الطالب أو ولي الأمر يقدم إجازة" ON public.leave_requests
-    FOR INSERT TO authenticated WITH CHECK (
-        student_id = public.current_student_id()
-        OR student_id IN (SELECT id FROM public.students WHERE parent_id = public.current_parent_id())
-    );
-
-CREATE POLICY "الإدارة تراجع طلب الإجازة" ON public.leave_requests
-    FOR UPDATE TO authenticated USING (public.is_management());
-
--- =====================================================
--- سياسات RLS: daily_lesson_plans
--- =====================================================
-CREATE POLICY "عرض الخطط اليومية" ON public.daily_lesson_plans
-    FOR SELECT TO authenticated USING (
-        public.is_management() OR teacher_id = public.current_teacher_id()
-    );
-
-CREATE POLICY "المعلم يدير خططه اليومية" ON public.daily_lesson_plans
-    FOR ALL TO authenticated USING (
-        teacher_id = public.current_teacher_id() OR public.is_management()
-    );
-
--- =====================================================
--- سياسات RLS: parent_appointments
--- =====================================================
-CREATE POLICY "عرض مواعيد أولياء الأمور" ON public.parent_appointments
-    FOR SELECT TO authenticated USING (
-        public.is_management()
-        OR parent_id = public.current_parent_id()
-        OR teacher_id = public.current_teacher_id()
-    );
-
-CREATE POLICY "ولي الأمر يطلب موعد" ON public.parent_appointments
-    FOR INSERT TO authenticated WITH CHECK (
-        parent_id = public.current_parent_id()
-    );
-
-CREATE POLICY "المعلم والإدارة يعدلان حالة الموعد" ON public.parent_appointments
-    FOR UPDATE TO authenticated USING (
-        public.is_management() OR teacher_id = public.current_teacher_id()
-    );
-
--- =====================================================
--- سياسات RLS: notifications
--- =====================================================
-CREATE POLICY "المستخدم يرى إشعاراته فقط" ON public.notifications
-    FOR SELECT TO authenticated USING (user_id = auth.uid());
-
-CREATE POLICY "المستخدم يحدث حالة قراءة إشعاره" ON public.notifications
-    FOR UPDATE TO authenticated USING (user_id = auth.uid());
-
-CREATE POLICY "إرسال الإشعارات" ON public.notifications
-    FOR INSERT TO authenticated WITH CHECK (true);
-
--- =====================================================
--- سياسات RLS: school_settings
--- =====================================================
-CREATE POLICY "الجميع يقرأ إعدادات المدرسة" ON public.school_settings
-    FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "الإدارة تعدل إعدادات المدرسة" ON public.school_settings
-    FOR ALL USING (public.is_management());
-
--- =====================================================
--- تريغر لإنشاء profile تلقائياً عند تسجيل المستخدم في auth.users
--- =====================================================
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO public.profiles (id, full_name, role, phone, national_id)
-    VALUES (
-        NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'full_name', 'مستخدم جديد'),
-        COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'student'),
-        NEW.raw_user_meta_data->>'phone',
-        NEW.raw_user_meta_data->>'national_id'
-    )
-    ON CONFLICT (id) DO UPDATE
-    SET full_name = EXCLUDED.full_name,
-        role = EXCLUDED.role,
-        phone = EXCLUDED.phone;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-    AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- تمكين ميزة Realtime على الجداول الحساسة
-ALTER PUBLICATION supabase_realtime ADD TABLE public.attendances;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.grades;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.behavior_notes;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.homeworks;
+INSERT INTO public.classes (name, section, stage) VALUES
+    ('الأول متوسط', 'أ', 'متوسطة'),
+    ('الأول متوسط', 'ب', 'متوسطة'),
+    ('الثاني متوسط', 'أ', 'متوسطة'),
+    ('الثالث متوسط', 'أ', 'متوسطة')
+ON CONFLICT DO NOTHING;

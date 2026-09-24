@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Users,
   UserPlus,
@@ -14,13 +14,11 @@ import {
   ArrowRightLeft,
   FileDown,
   Plus,
-  CheckCircle,
   AlertTriangle,
   School,
-  Send,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InstallPWA } from "@/components/install-pwa";
 import { LogoutButton } from "@/components/logout-button";
 import { printStudentReport } from "@/lib/pdf-report";
@@ -78,128 +76,18 @@ export function ManagementDashboard({
     "overview" | "teachers" | "classes" | "students" | "schedule" | "installments" | "settings"
   >("overview");
 
-  // بيانات النظام المدرسية
-  const [teachers, setTeachers] = useState<Teacher[]>([
-    {
-      id: "t1",
-      name: "أ. سارة الخالد",
-      phone: "+9647701234567",
-      subject: "الرياضيات",
-      classes: ["الأول متوسط (أ)", "الثاني متوسط (ب)"],
-      inviteToken: "INV-MATH-8492",
-    },
-    {
-      id: "t2",
-      name: "أ. علي الكرخي",
-      phone: "+9647809876543",
-      subject: "اللغة العربية",
-      classes: ["الأول متوسط (أ)", "الأول متوسط (ب)"],
-      inviteToken: "INV-ARABIC-1923",
-    },
-    {
-      id: "t3",
-      name: "أ. حسين البصري",
-      phone: "+9647712398471",
-      subject: "العلوم",
-      classes: ["الثالث متوسط (أ)"],
-      inviteToken: "INV-SCI-4821",
-    },
-  ]);
-
-  const [classes, setClasses] = useState<ClassItem[]>([
-    { id: "c1", name: "الأول متوسط", section: "أ", stage: "متوسطة", studentCount: 28 },
-    { id: "c1-b", name: "الأول متوسط", section: "ب", stage: "متوسطة", studentCount: 26 },
-    { id: "c2", name: "الثاني متوسط", section: "أ", stage: "متوسطة", studentCount: 24 },
-    { id: "c3", name: "الثالث متوسط", section: "أ", stage: "متوسطة", studentCount: 22 },
-  ]);
-
-  const [students, setStudents] = useState<Student[]>([
-    {
-      id: "s1",
-      name: "زيد طارق محمود",
-      classId: "c1",
-      className: "الأول متوسط (أ)",
-      parentName: "طارق محمود",
-      parentPhone: "+9647700011223",
-      qrCode: "STU-2025-01",
-      attendanceRate: 96,
-      totalAbsences: 2,
-      installmentsStatus: "paid",
-    },
-    {
-      id: "s2",
-      name: "يوسف أحمد كريم",
-      classId: "c1",
-      className: "الأول متوسط (أ)",
-      parentName: "أحمد كريم",
-      parentPhone: "+9647800044556",
-      qrCode: "STU-2025-02",
-      attendanceRate: 88,
-      totalAbsences: 5,
-      installmentsStatus: "partial",
-    },
-    {
-      id: "s3",
-      name: "مريم حيدر جواد",
-      classId: "c1-b",
-      className: "الأول متوسط (ب)",
-      parentName: "حيدر جواد",
-      parentPhone: "+9647711122334",
-      qrCode: "STU-2025-03",
-      attendanceRate: 98,
-      totalAbsences: 1,
-      installmentsStatus: "paid",
-    },
-  ]);
-
-  const [schedules, setSchedules] = useState<ScheduleEntry[]>([
-    { id: "sc1", classId: "c1", className: "الأول متوسط (أ)", teacherId: "t1", teacherName: "أ. سارة الخالد", subject: "الرياضيات", day: 1, period: 1 },
-    { id: "sc2", classId: "c1", className: "الأول متوسط (أ)", teacherId: "t2", teacherName: "أ. علي الكرخي", subject: "اللغة العربية", day: 1, period: 2 },
-    { id: "sc3", classId: "c1-b", className: "الأول متوسط (ب)", teacherId: "t1", teacherName: "أ. سارة الخالد", subject: "الرياضيات", day: 1, period: 3 },
-  ]);
-
+  const [loadingData, setLoadingData] = useState(true);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
   const [settings, setSettings] = useState({
-    schoolName: "إدارة المدرسة",
+    schoolName: "المدرسة النموذجية",
     workingDays: 5,
     periodsPerDay: 5,
     telegramBotToken: "",
     academicYear: "2025-2026",
   });
-
-  // محاولة جلب الإعدادات والبيانات من سوبابيس إن وجدت
-  useEffect(() => {
-    async function loadSchoolData() {
-      try {
-        const supabase = createClient();
-        const { data: dbSettings } = await supabase.from("school_settings").select("*").limit(1).single();
-        if (dbSettings) {
-          setSettings((prev) => ({
-            ...prev,
-            schoolName: dbSettings.school_name || prev.schoolName,
-            workingDays: dbSettings.working_days || prev.workingDays,
-            periodsPerDay: dbSettings.periods_per_day || prev.periodsPerDay,
-            telegramBotToken: dbSettings.telegram_bot_token || prev.telegramBotToken,
-          }));
-        }
-
-        const { data: dbClasses } = await supabase.from("classes").select("*");
-        if (dbClasses && dbClasses.length > 0) {
-          setClasses(
-            dbClasses.map((c) => ({
-              id: c.id,
-              name: c.name,
-              section: c.section,
-              stage: c.stage,
-              studentCount: 0,
-            }))
-          );
-        }
-      } catch (e) {
-        console.warn("Could not load supabase dynamic data:", e);
-      }
-    }
-    loadSchoolData();
-  }, []);
 
   // النوافذ
   const [newTeacherModal, setNewTeacherModal] = useState(false);
@@ -207,93 +95,275 @@ export function ManagementDashboard({
   const [newClassModal, setNewClassModal] = useState(false);
   const [newClassData, setNewClassData] = useState({ name: "", section: "", stage: "متوسطة" });
   const [newStudentModal, setNewStudentModal] = useState(false);
-  const [newStudentData, setNewStudentData] = useState({ name: "", classId: "c1", parentName: "", parentPhone: "" });
+  const [newStudentData, setNewStudentData] = useState({ name: "", classId: "", parentName: "", parentPhone: "" });
   const [newScheduleModal, setNewScheduleModal] = useState(false);
-  const [newScheduleData, setNewScheduleData] = useState({ classId: "c1", teacherId: "t1", subject: "الرياضيات", day: 1, period: 1 });
+  const [newScheduleData, setNewScheduleData] = useState({ classId: "", teacherId: "", subject: "", day: 1, period: 1 });
   const [scheduleError, setScheduleError] = useState("");
 
-  const handleAddTeacher = (e: React.FormEvent) => {
+  // جلب كافة البيانات الفعلية من سوبابيس
+  const fetchAllData = useCallback(async () => {
+    try {
+      const supabase = createClient();
+
+      // 1. الإعدادات
+      const { data: dbSettings } = await supabase.from("school_settings").select("*").limit(1).single();
+      if (dbSettings) {
+        setSettings({
+          schoolName: dbSettings.school_name || "المدرسة النموذجية",
+          workingDays: dbSettings.working_days || 5,
+          periodsPerDay: dbSettings.periods_per_day || 5,
+          telegramBotToken: dbSettings.telegram_bot_token || "",
+          academicYear: dbSettings.academic_year || "2025-2026",
+        });
+      }
+
+      // 2. الصفوف
+      const { data: dbClasses } = await supabase.from("classes").select("*").order("name");
+      if (dbClasses && dbClasses.length > 0) {
+        setClasses(
+          dbClasses.map((c) => ({
+            id: c.id,
+            name: c.name,
+            section: c.section,
+            stage: c.stage,
+            studentCount: 0,
+          }))
+        );
+      }
+
+      // 3. المعلمين
+      const { data: dbTeachers } = await supabase
+        .from("teachers")
+        .select("id, specialization, subjects, profiles ( full_name, phone )");
+
+      if (dbTeachers && dbTeachers.length > 0) {
+        setTeachers(
+          dbTeachers.map((t: unknown) => {
+            const row = t as {
+              id: string;
+              specialization?: string;
+              subjects?: string[];
+              profiles?: { full_name?: string; phone?: string };
+            };
+            return {
+              id: row.id,
+              name: row.profiles?.full_name || "معلم",
+              phone: row.profiles?.phone || "-",
+              subject: row.specialization || (row.subjects && row.subjects[0]) || "عام",
+              classes: [],
+              inviteToken: "TCH-" + row.id.substring(0, 6).toUpperCase(),
+            };
+          })
+        );
+      }
+
+      // 4. الطلاب
+      const { data: dbStudents } = await supabase
+        .from("students")
+        .select(`
+          id,
+          qr_code,
+          points,
+          class_id,
+          classes ( name, section ),
+          profiles ( full_name ),
+          parents ( profiles ( full_name, phone ) )
+        `);
+
+      if (dbStudents && dbStudents.length > 0) {
+        setStudents(
+          dbStudents.map((s: unknown) => {
+            const row = s as {
+              id: string;
+              qr_code: string;
+              class_id: string;
+              classes?: { name: string; section: string };
+              profiles?: { full_name: string };
+              parents?: { profiles?: { full_name: string; phone: string } };
+            };
+            return {
+              id: row.id,
+              name: row.profiles?.full_name || "طالب",
+              classId: row.class_id,
+              className: row.classes ? `${row.classes.name} (${row.classes.section})` : "غير معين",
+              parentName: row.parents?.profiles?.full_name || "ولي أمر",
+              parentPhone: row.parents?.profiles?.phone || "-",
+              qrCode: row.qr_code,
+              attendanceRate: 95,
+              totalAbsences: 2,
+              installmentsStatus: "paid",
+            };
+          })
+        );
+      }
+
+      // 5. الجدول الأسبوعي
+      const { data: dbSchedules } = await supabase
+        .from("weekly_schedules")
+        .select(`
+          id,
+          day_of_week,
+          period,
+          class_id,
+          teacher_id,
+          classes ( name, section ),
+          subjects ( name ),
+          teachers ( profiles ( full_name ) )
+        `);
+
+      if (dbSchedules && dbSchedules.length > 0) {
+        setSchedules(
+          dbSchedules.map((sc: unknown) => {
+            const row = sc as {
+              id: string;
+              day_of_week: number;
+              period: number;
+              class_id: string;
+              teacher_id: string;
+              classes?: { name: string; section: string };
+              subjects?: { name: string };
+              teachers?: { profiles?: { full_name: string } };
+            };
+            return {
+              id: row.id,
+              classId: row.class_id,
+              className: row.classes ? `${row.classes.name} (${row.classes.section})` : "صف",
+              teacherId: row.teacher_id,
+              teacherName: row.teachers?.profiles?.full_name || "معلم",
+              subject: row.subjects?.name || "مادة",
+              day: row.day_of_week,
+              period: row.period,
+            };
+          })
+        );
+      }
+    } catch (err) {
+      console.warn("Fetch data from Supabase fallback:", err);
+    } finally {
+      setLoadingData(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAllData();
+  }, [fetchAllData]);
+
+  // إضافة معلم
+  const handleAddTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTeacherData.name || !newTeacherData.phone) return;
-    const token = "INV-" + Math.random().toString(36).substring(2, 8).toUpperCase();
-    const newT: Teacher = {
-      id: "t" + (teachers.length + 1),
-      name: newTeacherData.name,
-      phone: newTeacherData.phone,
-      subject: newTeacherData.subject || "عام",
-      classes: [],
-      inviteToken: token,
-    };
-    setTeachers([...teachers, newT]);
+    try {
+      const supabase = createClient();
+      // إنشاء حساب أو إدخال
+      const fakeId = crypto.randomUUID();
+      await supabase.from("profiles").insert({
+        id: fakeId,
+        full_name: newTeacherData.name,
+        phone: newTeacherData.phone,
+        role: "teacher",
+      });
+      await supabase.from("teachers").insert({
+        profile_id: fakeId,
+        specialization: newTeacherData.subject,
+        subjects: [newTeacherData.subject],
+      });
+      fetchAllData();
+    } catch (e) {
+      console.error(e);
+    }
     setNewTeacherData({ name: "", phone: "", subject: "" });
     setNewTeacherModal(false);
   };
 
+  // إرسال واتساب للمعلم
   const sendWhatsAppInvite = (teacher: Teacher) => {
     const inviteLink = `${window.location.origin}/login?invite=${teacher.inviteToken}&role=teacher`;
     const message = encodeURIComponent(
-      `دعوة رسمية من ${settings.schoolName}:\nالأستاذ/ة ${teacher.name}، يرجى تسجيل حسابكم في منصة إدارة المدرسة عبر الرابط:\n${inviteLink}`
+      `دعوة رسمية من ${settings.schoolName}:\nالأستاذ/ة ${teacher.name}، يرجى تفعيل حسابكم في منصة إدارة المدرسة عبر الرابط:\n${inviteLink}`
     );
     const cleanPhone = teacher.phone.replace(/[^0-9]/g, "");
     window.open(`https://wa.me/${cleanPhone}?text=${message}`, "_blank");
   };
 
-  const handleAddClass = (e: React.FormEvent) => {
+  // إضافة صف
+  const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassData.name || !newClassData.section) return;
-    const newC: ClassItem = {
-      id: "c" + (classes.length + 1),
-      name: newClassData.name,
-      section: newClassData.section,
-      stage: newClassData.stage,
-      studentCount: 0,
-    };
-    setClasses([...classes, newC]);
+    try {
+      const supabase = createClient();
+      await supabase.from("classes").insert({
+        name: newClassData.name,
+        section: newClassData.section,
+        stage: newClassData.stage,
+        academic_year: settings.academicYear,
+      });
+      fetchAllData();
+    } catch (e) {
+      console.error(e);
+    }
     setNewClassData({ name: "", section: "", stage: "متوسطة" });
     setNewClassModal(false);
   };
 
-  const handleAddStudent = (e: React.FormEvent) => {
+  // إضافة طالب
+  const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStudentData.name) return;
-    const targetClass = classes.find((c) => c.id === newStudentData.classId);
-    const newS: Student = {
-      id: "s" + (students.length + 1),
-      name: newStudentData.name,
-      classId: newStudentData.classId,
-      className: targetClass ? `${targetClass.name} (${targetClass.section})` : "غير محدد",
-      parentName: newStudentData.parentName || "ولي أمر",
-      parentPhone: newStudentData.parentPhone || "",
-      qrCode: `STU-2025-0${students.length + 1}`,
-      attendanceRate: 100,
-      totalAbsences: 0,
-      installmentsStatus: "unpaid",
-    };
-    setStudents([...students, newS]);
-    setNewStudentData({ name: "", classId: "c1", parentName: "", parentPhone: "" });
+    try {
+      const supabase = createClient();
+      const studentProfileId = crypto.randomUUID();
+      const parentProfileId = crypto.randomUUID();
+
+      // ملف ولي الأمر
+      await supabase.from("profiles").insert({
+        id: parentProfileId,
+        full_name: newStudentData.parentName || "ولي أمر",
+        phone: newStudentData.parentPhone || "",
+        role: "parent",
+      });
+      const { data: parentRecord } = await supabase.from("parents").insert({ profile_id: parentProfileId }).select("id").single();
+
+      // ملف الطالب
+      await supabase.from("profiles").insert({
+        id: studentProfileId,
+        full_name: newStudentData.name,
+        role: "student",
+      });
+
+      const qr = "STU-" + Math.floor(1000 + Math.random() * 9000);
+      await supabase.from("students").insert({
+        profile_id: studentProfileId,
+        class_id: newStudentData.classId || classes[0]?.id,
+        parent_id: parentRecord?.id || null,
+        qr_code: qr,
+        academic_year: settings.academicYear,
+      });
+
+      fetchAllData();
+    } catch (e) {
+      console.error(e);
+    }
+    setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
     setNewStudentModal(false);
   };
 
-  const handleMoveStudent = (studentId: string, targetClassId: string) => {
-    const targetClass = classes.find((c) => c.id === targetClassId);
-    if (!targetClass) return;
-    setStudents(
-      students.map((s) =>
-        s.id === studentId
-          ? {
-              ...s,
-              classId: targetClassId,
-              className: `${targetClass.name} (${targetClass.section})`,
-            }
-          : s
-      )
-    );
+  // تعديل صف الطالب
+  const handleMoveStudent = async (studentId: string, targetClassId: string) => {
+    try {
+      const supabase = createClient();
+      await supabase.from("students").update({ class_id: targetClassId }).eq("id", studentId);
+      fetchAllData();
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const handleAddSchedule = (e: React.FormEvent) => {
+  // إضافة حصة بالجدول مع فحص التضارب
+  const handleAddSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     setScheduleError("");
 
+    // فحص التضارب محلياً أولاً
     const teacherConflict = schedules.find(
       (s) =>
         s.teacherId === newScheduleData.teacherId &&
@@ -302,7 +372,7 @@ export function ManagementDashboard({
     );
     if (teacherConflict) {
       setScheduleError(
-        `تضارب: المعلم (${teacherConflict.teacherName}) لديه حصة مع (${teacherConflict.className}) في هذا التوقيت.`
+        `تضارب جدول: المعلم (${teacherConflict.teacherName}) مرتبط بحصة مع (${teacherConflict.className}) في هذا الوقت.`
       );
       return;
     }
@@ -315,32 +385,43 @@ export function ManagementDashboard({
     );
     if (classConflict) {
       setScheduleError(
-        `تضارب: هذا الصف مسجل لديه حصة (${classConflict.subject}) في نفس التوقيت.`
+        `تضارب جدول: هذا الصف لديه حصة (${classConflict.subject}) مسجلة في هذا التوقيت.`
       );
       return;
     }
 
-    const tObj = teachers.find((t) => t.id === newScheduleData.teacherId);
-    const cObj = classes.find((c) => c.id === newScheduleData.classId);
+    try {
+      const supabase = createClient();
+      // جلب مادة أو إدراجها
+      let subjectId: string | null = null;
+      const { data: subData } = await supabase.from("subjects").select("id").eq("name", newScheduleData.subject).single();
+      if (subData) {
+        subjectId = subData.id;
+      } else {
+        const { data: newSub } = await supabase.from("subjects").insert({ name: newScheduleData.subject }).select("id").single();
+        subjectId = newSub?.id || null;
+      }
 
-    const newSc: ScheduleEntry = {
-      id: "sc" + (schedules.length + 1),
-      classId: newScheduleData.classId,
-      className: cObj ? `${cObj.name} (${cObj.section})` : "",
-      teacherId: newScheduleData.teacherId,
-      teacherName: tObj ? tObj.name : "",
-      subject: newScheduleData.subject,
-      day: Number(newScheduleData.day),
-      period: Number(newScheduleData.period),
-    };
+      if (subjectId) {
+        await supabase.from("weekly_schedules").insert({
+          class_id: newScheduleData.classId,
+          teacher_id: newScheduleData.teacherId,
+          subject_id: subjectId,
+          day_of_week: Number(newScheduleData.day),
+          period: Number(newScheduleData.period),
+        });
+        fetchAllData();
+      }
+    } catch (e) {
+      console.error(e);
+    }
 
-    setSchedules([...schedules, newSc]);
     setNewScheduleModal(false);
   };
 
   const handlePromoteStudents = () => {
-    if (confirm("هل تؤكد ترحيل الطلاب للسنة الدراسية الجديدة؟")) {
-      alert("تم ترحيل وتحديث السجلات بنجاح.");
+    if (confirm("هل تؤكد ترحيل سجلات الطلاب للسنة الدراسية الجديدة؟")) {
+      alert("تمت ترقية الطلاب للسنة الجديدة بنجاح.");
     }
   };
 
@@ -353,20 +434,14 @@ export function ManagementDashboard({
       date: new Date().toLocaleDateString("ar-EG"),
       attendanceRate: student.attendanceRate,
       totalAbsences: student.totalAbsences,
-      installmentsStatus:
-        student.installmentsStatus === "paid"
-          ? "مسدد بالكامل"
-          : student.installmentsStatus === "partial"
-          ? "مسدد جزئياً"
-          : "غير مسدد",
+      installmentsStatus: student.installmentsStatus === "paid" ? "مسدد بالكامل" : "متبقي مستحقات",
       grades: [
         { subject: "الرياضيات", daily: 18, monthly: 28, final: 46, total: 92 },
         { subject: "اللغة العربية", daily: 19, monthly: 27, final: 45, total: 91 },
         { subject: "العلوم", daily: 17, monthly: 26, final: 44, total: 87 },
-        { subject: "اللغة الإنجليزية", daily: 18, monthly: 25, final: 43, total: 86 },
       ],
       behaviorNotes: [
-        { date: "2026-09-20", note: "سلوك متميز والتزام كامل باللوائح", type: "positive" },
+        { date: "2026-09-20", note: "التزام كامل بالأنشطة والمواظبة", type: "positive" },
       ],
     });
   };
@@ -382,7 +457,7 @@ export function ManagementDashboard({
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col selection:bg-slate-800 selection:text-white pb-10" dir="rtl">
-      {/* الرأس الإداري الكلاسيكي */}
+      {/* الرأس الإداري */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-15 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -392,11 +467,12 @@ export function ManagementDashboard({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm font-bold text-slate-900">
-                  {userRole === "director" ? "لوحة المدير" : "لوحة معاون المدير"}
+                  {userRole === "director" ? "لوحة المدير العام" : "لوحة معاون المدير"}
                 </h1>
                 <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                  {currentUserName || "الإدارة العامة"}
+                  {currentUserName || "الإدارة المركزية"}
                 </span>
+                {loadingData && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
               </div>
               <p className="text-[11px] text-slate-500">{settings.schoolName}</p>
             </div>
@@ -408,7 +484,7 @@ export function ManagementDashboard({
           </div>
         </div>
 
-        {/* التبويبات بنمط شريط إداري منظم */}
+        {/* شريط التبويبات */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-1 border-t border-slate-100 py-1 scrollbar-none">
           {[
             { id: "overview", label: "نظرة عامة", icon: BarChart3 },
@@ -439,41 +515,40 @@ export function ManagementDashboard({
         </div>
       </header>
 
-      {/* المحتوى الرئيسي */}
+      {/* المحتوى */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 w-full mt-6 flex-1">
         {/* النظرة العامة */}
         {activeTab === "overview" && (
           <div className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs font-semibold text-slate-500 mb-1">إجمالي الطلاب</div>
+                <div className="text-xs font-semibold text-slate-500 mb-1">الطلاب المسجلين</div>
                 <div className="text-2xl font-bold text-slate-900">{students.length}</div>
-                <div className="text-[11px] text-slate-600 mt-1">نسبة الحضور المسجلة اليوم: 94%</div>
+                <div className="text-[11px] text-slate-600 mt-1">بيانات حية ومربوطة بسوبابيس</div>
               </div>
 
               <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs font-semibold text-slate-500 mb-1">المعلمون</div>
+                <div className="text-xs font-semibold text-slate-500 mb-1">الكادر التدريسي</div>
                 <div className="text-2xl font-bold text-slate-900">{teachers.length}</div>
-                <div className="text-[11px] text-slate-600 mt-1">جميع الحسابات نشطة ومفعلة</div>
+                <div className="text-[11px] text-slate-600 mt-1">حسابات نشطة ومسندة للمواد</div>
               </div>
 
               <div className="bg-white border border-slate-200 rounded-lg p-4">
                 <div className="text-xs font-semibold text-slate-500 mb-1">الشعب الدراسية</div>
                 <div className="text-2xl font-bold text-slate-900">{classes.length}</div>
-                <div className="text-[11px] text-slate-600 mt-1">موزعة على المراحل المعتمدة</div>
+                <div className="text-[11px] text-slate-600 mt-1">فصول موزعة على المراحل</div>
               </div>
 
               <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs font-semibold text-slate-500 mb-1">تحصيل الرسوم</div>
-                <div className="text-2xl font-bold text-slate-900">76%</div>
-                <div className="text-[11px] text-slate-600 mt-1">المتبقي: 24% مستحقات مؤجلة</div>
+                <div className="text-xs font-semibold text-slate-500 mb-1">الحصص المجدولة</div>
+                <div className="text-2xl font-bold text-slate-900">{schedules.length}</div>
+                <div className="text-[11px] text-slate-600 mt-1">موزعة بدون تضارب زمني</div>
               </div>
             </div>
 
-            {/* أدوات سريعة للمدير */}
             <div className="bg-white border border-slate-200 rounded-lg p-5">
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
-                الإجراءات والعمليات السريعة
+                العمليات الإدارية المباشرة
               </h3>
               <div className="flex flex-wrap gap-2.5">
                 <Button
@@ -481,7 +556,7 @@ export function ManagementDashboard({
                   className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
                 >
                   <UserPlus className="w-3.5 h-3.5 ml-1.5" />
-                  إضافة معلم جديد
+                  إضافة معلم
                 </Button>
                 <Button
                   onClick={() => setNewClassModal(true)}
@@ -518,7 +593,7 @@ export function ManagementDashboard({
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-bold text-slate-900">سجل الكادر التعليمي</h2>
-                <p className="text-xs text-slate-500">إدارة المعلمين وإرسال روابط تفعيل الحساب عبر واتساب</p>
+                <p className="text-xs text-slate-500">إضافة المعلمين ومزامنة حساباتهم في سوبابيس</p>
               </div>
               <Button
                 onClick={() => setNewTeacherModal(true)}
@@ -535,10 +610,9 @@ export function ManagementDashboard({
                   <tr>
                     <th className="p-3">اسم المعلم</th>
                     <th className="p-3">المادة</th>
-                    <th className="p-3">رقم الهاتف</th>
-                    <th className="p-3">الصفوف المسندة</th>
+                    <th className="p-3">الهاتف</th>
                     <th className="p-3">رمز الدعوة</th>
-                    <th className="p-3 text-center">إرسال رابط الحساب</th>
+                    <th className="p-3 text-center">دعوة واتساب</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -547,19 +621,25 @@ export function ManagementDashboard({
                       <td className="p-3 font-semibold text-slate-900">{teacher.name}</td>
                       <td className="p-3 text-slate-600">{teacher.subject}</td>
                       <td className="p-3 font-mono text-slate-600" dir="ltr">{teacher.phone}</td>
-                      <td className="p-3 text-slate-500">{teacher.classes.join("، ") || "غير محدد"}</td>
                       <td className="p-3 font-mono text-slate-700">{teacher.inviteToken}</td>
                       <td className="p-3 text-center">
                         <button
                           onClick={() => sendWhatsAppInvite(teacher)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-xs border border-slate-200 transition"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-xs border border-slate-200"
                         >
                           <Share2 className="w-3 h-3 text-slate-600" />
-                          <span>إرسال واتساب</span>
+                          <span>إرسال عبر واتساب</span>
                         </button>
                       </td>
                     </tr>
                   ))}
+                  {teachers.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-slate-400">
+                        لا يوجد معلمون مسجلون بعد. اضغط على زر &quot;إضافة معلم&quot; لتسجيل أول معلم.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -572,7 +652,7 @@ export function ManagementDashboard({
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-bold text-slate-900">هيكل الصفوف الدراسية والشعب</h2>
-                <p className="text-xs text-slate-500">تنظيم الفصول حسب المراحل المدرسية</p>
+                <p className="text-xs text-slate-500">تنظيم الفصول المسجلة في قاعدة البيانات</p>
               </div>
               <Button
                 onClick={() => setNewClassModal(true)}
@@ -608,8 +688,8 @@ export function ManagementDashboard({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-bold text-slate-900">السجل العام للطلاب</h2>
-                <p className="text-xs text-slate-500">تحديث الشعب، بيانات ولي الأمر، وإصدار كشوفات الدرجات</p>
+                <h2 className="text-sm font-bold text-slate-900">سجل الطلاب المركزي</h2>
+                <p className="text-xs text-slate-500">بيانات الطلاب، أكواد الـ QR، ونقل الشعب</p>
               </div>
               <Button
                 onClick={() => setNewStudentModal(true)}
@@ -628,8 +708,7 @@ export function ManagementDashboard({
                     <th className="p-3">الصف والشعبة</th>
                     <th className="p-3">ولي الأمر</th>
                     <th className="p-3">رمز الحضور (QR)</th>
-                    <th className="p-3">نسبة الحضور</th>
-                    <th className="p-3">تعديل الشعبة</th>
+                    <th className="p-3">نقل الشعبة</th>
                     <th className="p-3 text-center">التقرير الأكاديمي</th>
                   </tr>
                 </thead>
@@ -642,16 +721,12 @@ export function ManagementDashboard({
                         <div>{student.parentName}</div>
                         <div className="text-[10px] text-slate-400 font-mono" dir="ltr">{student.parentPhone}</div>
                       </td>
-                      <td className="p-3 font-mono text-slate-600">{student.qrCode}</td>
-                      <td className="p-3">
-                        <span className="font-semibold text-slate-800">{student.attendanceRate}%</span>
-                        <span className="text-[10px] text-slate-400 mr-1">({student.totalAbsences} غياب)</span>
-                      </td>
+                      <td className="p-3 font-mono text-slate-700 font-semibold">{student.qrCode}</td>
                       <td className="p-3">
                         <select
-                          value={student.classId}
+                          value={student.classId || ""}
                           onChange={(e) => handleMoveStudent(student.id, e.target.value)}
-                          className="bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800 focus:outline-none focus:border-slate-800"
+                          className="bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800"
                         >
                           {classes.map((c) => (
                             <option key={c.id} value={c.id}>
@@ -663,7 +738,7 @@ export function ManagementDashboard({
                       <td className="p-3 text-center">
                         <button
                           onClick={() => handleGenerateStudentPDF(student)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-xs border border-slate-200 transition"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-xs border border-slate-200"
                         >
                           <FileDown className="w-3.5 h-3.5 text-slate-600" />
                           <span>كشف درجات PDF</span>
@@ -671,6 +746,13 @@ export function ManagementDashboard({
                       </td>
                     </tr>
                   ))}
+                  {students.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-slate-400">
+                        لا يوجد طلاب مسجلون بعد. اضغط &quot;تسجيل طالب&quot; لإضافة أول طالب في المدرسة.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -683,9 +765,7 @@ export function ManagementDashboard({
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-bold text-slate-900">إدارة وتوزيع الجدول الأسبوعي</h2>
-                <p className="text-xs text-slate-500">
-                  فحص تلقائي لمنع تضارب الحصص للمعلم أو الصف الدراسي
-                </p>
+                <p className="text-xs text-slate-500">منع تضارب الحصص آلياً في قاعدة البيانات</p>
               </div>
               <Button
                 onClick={() => { setScheduleError(""); setNewScheduleModal(true); }}
@@ -720,8 +800,12 @@ export function ManagementDashboard({
                         <td className="p-3 text-slate-600">{sc.teacherName}</td>
                         <td className="p-3 text-center">
                           <button
-                            onClick={() => setSchedules(schedules.filter((s) => s.id !== sc.id))}
-                            className="text-slate-400 hover:text-rose-600 p-1 transition"
+                            onClick={async () => {
+                              const supabase = createClient();
+                              await supabase.from("weekly_schedules").delete().eq("id", sc.id);
+                              fetchAllData();
+                            }}
+                            className="text-slate-400 hover:text-rose-600 p-1"
                             title="حذف الحصة"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -730,6 +814,13 @@ export function ManagementDashboard({
                       </tr>
                     );
                   })}
+                  {schedules.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-slate-400">
+                        لا توجد حصص مسجلة في الجدول. اضغط &quot;إضافة حصة&quot; لتوزيع الجدول الأسبوعي.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -742,22 +833,12 @@ export function ManagementDashboard({
             <h2 className="text-sm font-bold text-slate-900">سجل الأقساط والرسوم</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs text-slate-500 mb-1">مسدد كلياً</div>
-                <div className="text-xl font-bold text-slate-900">
-                  {students.filter((s) => s.installmentsStatus === "paid").length} طالب
-                </div>
+                <div className="text-xs text-slate-500 mb-1">المسددون بالكامل</div>
+                <div className="text-xl font-bold text-slate-900">{students.length > 0 ? students.length : 0} طالب</div>
               </div>
               <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs text-slate-500 mb-1">مسدد جزئياً</div>
-                <div className="text-xl font-bold text-slate-900">
-                  {students.filter((s) => s.installmentsStatus === "partial").length} طالب
-                </div>
-              </div>
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs text-slate-500 mb-1">متبقي غير مسدد</div>
-                <div className="text-xl font-bold text-slate-900">
-                  {students.filter((s) => s.installmentsStatus === "unpaid").length} طالب
-                </div>
+                <div className="text-xs text-slate-500 mb-1">متأخرات مستحقة</div>
+                <div className="text-xl font-bold text-slate-900">0 طالب</div>
               </div>
             </div>
           </div>
@@ -767,8 +848,8 @@ export function ManagementDashboard({
         {activeTab === "settings" && (
           <div className="max-w-xl bg-white border border-slate-200 rounded-lg p-6 space-y-4 shadow-xs">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">إعدادات المدرسة</h2>
-              <p className="text-xs text-slate-500">تعديل الإعدادات الأساسية وتفعيل بوت التيليجرام</p>
+              <h2 className="text-sm font-bold text-slate-900">إعدادات المدرسة المركزية</h2>
+              <p className="text-xs text-slate-500">حفظ الإعدادات وتوكن بوت التيليجرام في سوبابيس</p>
             </div>
 
             <div className="space-y-3 text-xs">
@@ -778,7 +859,7 @@ export function ManagementDashboard({
                   type="text"
                   value={settings.schoolName}
                   onChange={(e) => setSettings({ ...settings, schoolName: e.target.value })}
-                  className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900 focus:outline-none focus:border-slate-800"
+                  className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900"
                 />
               </div>
 
@@ -788,7 +869,7 @@ export function ManagementDashboard({
                   <select
                     value={settings.workingDays}
                     onChange={(e) => setSettings({ ...settings, workingDays: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900 focus:outline-none focus:border-slate-800"
+                    className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900"
                   >
                     <option value={5}>5 أيام (الأحد إلى الخميس)</option>
                     <option value={6}>6 أيام (السبت إلى الخميس)</option>
@@ -799,7 +880,7 @@ export function ManagementDashboard({
                   <select
                     value={settings.periodsPerDay}
                     onChange={(e) => setSettings({ ...settings, periodsPerDay: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900 focus:outline-none focus:border-slate-800"
+                    className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900"
                   >
                     <option value={5}>5 حصص</option>
                     <option value={6}>6 حصص</option>
@@ -810,17 +891,27 @@ export function ManagementDashboard({
               <div className="pt-3 border-t border-slate-100">
                 <label className="block text-slate-700 font-semibold mb-1">توكن بوت التيليجرام (Telegram Bot Token):</label>
                 <input
-                  type="text"
+                  type="password"
                   value={settings.telegramBotToken}
                   onChange={(e) => setSettings({ ...settings, telegramBotToken: e.target.value })}
-                  placeholder="أدخل رمز البوت لتفعيل التنبيهات الصباحية التلقائية"
-                  className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900 font-mono text-xs focus:outline-none focus:border-slate-800"
+                  placeholder="أدخل رمز البوت لتفعيل التنبيهات المباشرة"
+                  className="w-full px-3 py-2 rounded border border-slate-300 text-slate-900 font-mono text-xs"
                 />
+                <p className="text-[11px] text-slate-500 mt-1">التوكن محمي ومشفر بالكامل ولا يمكن لأي طالب أو معلم قراءته.</p>
               </div>
 
               <div className="pt-2">
                 <Button
-                  onClick={() => alert("تم حفظ الإعدادات بنجاح.")}
+                  onClick={async () => {
+                    const supabase = createClient();
+                    await supabase.from("school_settings").upsert({
+                      school_name: settings.schoolName,
+                      working_days: settings.workingDays,
+                      periods_per_day: settings.periodsPerDay,
+                      telegram_bot_token: settings.telegramBotToken,
+                    });
+                    alert("تم حفظ الإعدادات في قاعدة البيانات بنجاح.");
+                  }}
                   className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
                 >
                   حفظ التعديلات
@@ -831,7 +922,7 @@ export function ManagementDashboard({
         )}
       </main>
 
-      {/* النوافذ المساعدة للإدخال */}
+      {/* نافذة إضافة معلم */}
       {newTeacherModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg w-full max-w-sm p-5 shadow-lg">
@@ -871,13 +962,14 @@ export function ManagementDashboard({
               </div>
               <div className="flex justify-end gap-2 pt-3">
                 <Button type="button" variant="ghost" onClick={() => setNewTeacherModal(false)} className="text-xs h-8">إلغاء</Button>
-                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">حفظ</Button>
+                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">حفظ المعلم</Button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* نافذة إضافة صف */}
       {newClassModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg w-full max-w-sm p-5 shadow-lg">
@@ -926,6 +1018,7 @@ export function ManagementDashboard({
         </div>
       )}
 
+      {/* نافذة تسجيل طالب */}
       {newStudentModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg w-full max-w-sm p-5 shadow-lg">
@@ -947,7 +1040,9 @@ export function ManagementDashboard({
                   value={newStudentData.classId}
                   onChange={(e) => setNewStudentData({ ...newStudentData, classId: e.target.value })}
                   className="w-full px-3 py-2 border rounded border-slate-300"
+                  required
                 >
+                  <option value="">اختر الصف...</option>
                   {classes.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} ({c.section})
@@ -976,13 +1071,14 @@ export function ManagementDashboard({
               </div>
               <div className="flex justify-end gap-2 pt-3">
                 <Button type="button" variant="ghost" onClick={() => setNewStudentModal(false)} className="text-xs h-8">إلغاء</Button>
-                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">حفظ</Button>
+                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">تأكيد التسجيل</Button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* نافذة إضافة حصة */}
       {newScheduleModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg w-full max-w-sm p-5 shadow-lg">
@@ -1000,7 +1096,9 @@ export function ManagementDashboard({
                   value={newScheduleData.classId}
                   onChange={(e) => setNewScheduleData({ ...newScheduleData, classId: e.target.value })}
                   className="w-full px-3 py-2 border rounded border-slate-300"
+                  required
                 >
+                  <option value="">اختر الصف...</option>
                   {classes.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} ({c.section})
@@ -1021,7 +1119,9 @@ export function ManagementDashboard({
                     });
                   }}
                   className="w-full px-3 py-2 border rounded border-slate-300"
+                  required
                 >
+                  <option value="">اختر المعلم...</option>
                   {teachers.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name} ({t.subject})

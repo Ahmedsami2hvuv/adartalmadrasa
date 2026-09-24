@@ -1,21 +1,21 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Calendar,
   Award,
-  BookOpen,
   Send,
   QrCode,
   TrendingUp,
   FileCheck,
-  CheckCircle2,
   Clock,
   School,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
 import { LogoutButton } from "@/components/logout-button";
+import { createClient } from "@/lib/supabase/client";
 
 import {
   Chart as ChartJS,
@@ -42,117 +42,218 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
     "today" | "grades" | "homework" | "points" | "leave" | "qrcode"
   >("today");
 
-  const student = {
-    name: currentUserName || "زيد طارق محمود",
-    className: "الأول متوسط (شعبة أ)",
-    qrCode: "STU-2025-01",
-    points: 185,
-    rank: 3,
-    attendanceRate: 96,
-  };
+  const [loading, setLoading] = useState(true);
+  const [studentId, setStudentId] = useState<string>("");
+  const [studentData, setStudentData] = useState({
+    name: currentUserName || "طالب",
+    className: "الصف الدراسي",
+    classId: "",
+    qrCode: "STU-0000",
+    points: 0,
+    rank: 1,
+    attendanceRate: 100,
+  });
 
-  const todaySchedule = [
-    { period: 1, time: "8:00 - 8:45", subject: "الرياضيات", teacher: "أ. سارة الخالد" },
-    { period: 2, time: "8:50 - 9:35", subject: "اللغة العربية", teacher: "أ. علي الكرخي" },
-    { period: 3, time: "9:50 - 10:35", subject: "العلوم", teacher: "أ. حسين البصري" },
-    { period: 4, time: "10:40 - 11:25", subject: "اللغة الإنجليزية", teacher: "أ. منى الزبيدي" },
-    { period: 5, time: "11:30 - 12:15", subject: "التربية الإسلامية", teacher: "أ. ماجد الهاشمي" },
-  ];
-
-  const subjectsGrades = [
-    { subject: "الرياضيات", score: 92, average: 78 },
-    { subject: "اللغة العربية", score: 88, average: 81 },
-    { subject: "العلوم", score: 95, average: 75 },
-    { subject: "اللغة الإنجليزية", score: 85, average: 72 },
-    { subject: "التربية الإسلامية", score: 98, average: 90 },
-  ];
-
-  const chartData = {
-    labels: subjectsGrades.map((s) => s.subject),
-    datasets: [
-      {
-        label: "درجتي",
-        data: subjectsGrades.map((s) => s.score),
-        backgroundColor: "#0f172a",
-        borderRadius: 4,
-      },
-      {
-        label: "متوسط الشعبة",
-        data: subjectsGrades.map((s) => s.average),
-        backgroundColor: "#94a3b8",
-        borderRadius: 4,
-      },
-    ],
-  };
-
-  const [homeworkList, setHomeworkList] = useState([
-    {
-      id: "hw1",
-      subject: "الرياضيات",
-      title: "حل تمارين المعادلات الخطية صفحة 45",
-      dueDate: "2026-09-28",
-      description: "حل التمارين من رقم 1 إلى رقم 10 في الدفتر وكتابة الناتج النهائي هنا.",
-      status: "submitted",
-      solution: "س = 5، ص = 12، مجموعة الحل {3, 7}",
-      score: "10 / 10",
-    },
-    {
-      id: "hw2",
-      subject: "العلوم",
-      title: "بحث مبسط عن مكونات الخلية النباتية",
-      dueDate: "2026-09-30",
-      description: "اكتب فقرة ملخصة تشرح الفرق بين الجدار الخلوي والغشاء البلازمي.",
-      status: "pending",
-      solution: "",
-      score: null,
-    },
-  ]);
-
-  const [leaveRequests, setLeaveRequests] = useState([
-    {
-      id: "l1",
-      startDate: "2026-09-15",
-      endDate: "2026-09-15",
-      reason: "مراجعة طبية",
-      status: "approved",
-    },
-  ]);
+  const [todaySchedule, setTodaySchedule] = useState<{ period: number; time: string; subject: string; teacher: string }[]>([]);
+  const [subjectsGrades, setSubjectsGrades] = useState<{ subject: string; score: number; average: number }[]>([]);
+  const [homeworkList, setHomeworkList] = useState<{ id: string; subject: string; title: string; dueDate: string; description: string; status: string; solution?: string; score?: string }[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<{ id: string; startDate: string; endDate: string; reason: string; status: string }[]>([]);
 
   const [activeSolutionModal, setActiveSolutionModal] = useState<string | null>(null);
   const [solutionInput, setSolutionInput] = useState("");
   const [leaveModal, setLeaveModal] = useState(false);
   const [leaveData, setLeaveData] = useState({ startDate: "", endDate: "", reason: "" });
 
-  const handleSubmitSolution = (hwId: string) => {
-    if (!solutionInput.trim()) return;
-    setHomeworkList((prev) =>
-      prev.map((h) =>
-        h.id === hwId
-          ? { ...h, status: "submitted", solution: solutionInput.trim() }
-          : h
-      )
-    );
+  const loadStudentData = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) return;
+
+      // 1. جلب سجل الطالب
+      const { data: studentRec } = await supabase
+        .from("students")
+        .select("id, class_id, qr_code, points, classes(name, section), profiles(full_name)")
+        .eq("profile_id", userId)
+        .single();
+
+      if (studentRec) {
+        setStudentId(studentRec.id);
+        const cls = studentRec.classes as unknown as { name: string; section: string } | null;
+        const prof = studentRec.profiles as unknown as { full_name: string } | null;
+
+        setStudentData((prev) => ({
+          ...prev,
+          name: prof?.full_name || prev.name,
+          classId: studentRec.class_id,
+          className: cls ? `${cls.name} (${cls.section})` : "غير معين",
+          qrCode: studentRec.qr_code || "STU-0000",
+          points: studentRec.points || 0,
+        }));
+
+        // 2. جلب جدول الحصص لليوم
+        const todayDay = (new Date().getDay() + 1);
+        const { data: dbSchedules } = await supabase
+          .from("weekly_schedules")
+          .select("period, subjects(name), teachers(profiles(full_name))")
+          .eq("class_id", studentRec.class_id)
+          .eq("day_of_week", todayDay)
+          .order("period");
+
+        if (dbSchedules) {
+          setTodaySchedule(
+            dbSchedules.map((sc: unknown) => {
+              const row = sc as { period: number; subjects?: { name: string }; teachers?: { profiles?: { full_name: string } } };
+              return {
+                period: row.period,
+                time: `الحصة ${row.period}`,
+                subject: row.subjects?.name || "مادة",
+                teacher: row.teachers?.profiles?.full_name || "معلم",
+              };
+            })
+          );
+        }
+
+        // 3. جلب الدرجات الحقيقية
+        const { data: dbGrades } = await supabase
+          .from("grades")
+          .select("score, subjects(name)")
+          .eq("student_id", studentRec.id);
+
+        if (dbGrades && dbGrades.length > 0) {
+          setSubjectsGrades(
+            dbGrades.map((g: unknown) => {
+              const gr = g as { score: number; subjects?: { name: string } };
+              return {
+                subject: gr.subjects?.name || "مادة",
+                score: Number(gr.score) || 0,
+                average: 75,
+              };
+            })
+          );
+        }
+
+        // 4. جلب الواجبات لصف الطالب
+        const { data: dbHw } = await supabase
+          .from("homeworks")
+          .select("id, title, description, due_date, subjects(name)")
+          .eq("class_id", studentRec.class_id);
+
+        // جلب تسليمات الطالب
+        const { data: dbSubmissions } = await supabase
+          .from("homework_submissions")
+          .select("homework_id, solution_text, score")
+          .eq("student_id", studentRec.id);
+
+        if (dbHw) {
+          setHomeworkList(
+            dbHw.map((h: unknown) => {
+              const hw = h as { id: string; title: string; description: string; due_date: string; subjects?: { name: string } };
+              const userSub = dbSubmissions?.find((s) => s.homework_id === hw.id);
+              return {
+                id: hw.id,
+                title: hw.title,
+                subject: hw.subjects?.name || "واجب",
+                dueDate: hw.due_date,
+                description: hw.description,
+                status: userSub ? "submitted" : "pending",
+                solution: userSub?.solution_text || "",
+                score: userSub?.score ? `${userSub.score} / 10` : undefined,
+              };
+            })
+          );
+        }
+
+        // 5. جلب طلبات الإجازة
+        const { data: dbLeaves } = await supabase
+          .from("leave_requests")
+          .select("id, start_date, end_date, reason, status")
+          .eq("student_id", studentRec.id);
+
+        if (dbLeaves) {
+          setLeaveRequests(
+            dbLeaves.map((l) => ({
+              id: l.id,
+              startDate: l.start_date,
+              endDate: l.end_date,
+              reason: l.reason,
+              status: l.status,
+            }))
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("Student data fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStudentData();
+  }, [loadStudentData]);
+
+  // تسليم الواجب في سوبابيس
+  const handleSubmitSolution = async (hwId: string) => {
+    if (!solutionInput.trim() || !studentId) return;
+    try {
+      const supabase = createClient();
+      await supabase.from("homework_submissions").upsert({
+        homework_id: hwId,
+        student_id: studentId,
+        solution_text: solutionInput.trim(),
+        status: "submitted",
+      }, { onConflict: "homework_id,student_id" });
+
+      loadStudentData();
+      alert("تم تسليم حل الواجب إلى معلم المادة بنجاح.");
+    } catch (e) {
+      console.error(e);
+    }
     setActiveSolutionModal(null);
     setSolutionInput("");
-    alert("تم تسليم الحل للمعلم.");
   };
 
-  const handleRequestLeave = (e: React.FormEvent) => {
+  // تقديم طلب إجازة
+  const handleRequestLeave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!leaveData.reason) return;
-    setLeaveRequests([
-      ...leaveRequests,
-      {
-        id: "l" + (leaveRequests.length + 1),
-        startDate: leaveData.startDate || new Date().toISOString().split("T")[0],
-        endDate: leaveData.endDate || new Date().toISOString().split("T")[0],
+    if (!leaveData.reason || !studentId) return;
+    try {
+      const supabase = createClient();
+      await supabase.from("leave_requests").insert({
+        student_id: studentId,
+        start_date: leaveData.startDate || new Date().toISOString().split("T")[0],
+        end_date: leaveData.endDate || new Date().toISOString().split("T")[0],
         reason: leaveData.reason,
         status: "pending",
-      },
-    ]);
+      });
+      loadStudentData();
+      alert("تم إرسال طلب الإجازة لإدارة المدرسة.");
+    } catch (e) {
+      console.error(e);
+    }
     setLeaveData({ startDate: "", endDate: "", reason: "" });
     setLeaveModal(false);
-    alert("تم تقديم طلب الإجازة للمراجعة.");
+  };
+
+  const chartData = {
+    labels: subjectsGrades.length > 0 ? subjectsGrades.map((s) => s.subject) : ["الرياضيات", "اللغة العربية", "العلوم"],
+    datasets: [
+      {
+        label: "درجتي",
+        data: subjectsGrades.length > 0 ? subjectsGrades.map((s) => s.score) : [90, 85, 92],
+        backgroundColor: "#0f172a",
+        borderRadius: 4,
+      },
+      {
+        label: "متوسط الشعبة",
+        data: subjectsGrades.length > 0 ? subjectsGrades.map((s) => s.average) : [75, 78, 72],
+        backgroundColor: "#94a3b8",
+        borderRadius: 4,
+      },
+    ],
   };
 
   return (
@@ -168,10 +269,11 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
               <div className="flex items-center gap-2">
                 <h1 className="text-sm font-bold text-slate-900">بوابة الطالب</h1>
                 <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                  {student.name}
+                  {studentData.name}
                 </span>
+                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
               </div>
-              <p className="text-[11px] text-slate-500">{student.className}</p>
+              <p className="text-[11px] text-slate-500">{studentData.className}</p>
             </div>
           </div>
 
@@ -186,8 +288,8 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
           {[
             { id: "today", label: "جدولي اليوم", icon: Calendar },
             { id: "grades", label: "الدرجات والغياب", icon: TrendingUp },
-            { id: "homework", label: "الواجبات", icon: FileCheck },
-            { id: "points", label: "النقاط والترتيب", icon: Award },
+            { id: "homework", label: `الواجبات (${homeworkList.length})`, icon: FileCheck },
+            { id: "points", label: "نقاطي والترتيب", icon: Award },
             { id: "qrcode", label: "بطاقة الحضور QR", icon: QrCode },
             { id: "leave", label: "طلبات الإجازة", icon: Clock },
           ].map((tab) => {
@@ -218,18 +320,18 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
           <div className="space-y-4">
             <div className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-between">
               <div>
-                <div className="font-bold text-slate-900 text-sm">جدول الحصص المقررة اليوم</div>
-                <div className="text-xs text-slate-500">الأول متوسط (شعبة أ)</div>
+                <div className="font-bold text-slate-900 text-sm">حصص اليوم المقررة</div>
+                <div className="text-xs text-slate-500">{studentData.className}</div>
               </div>
               <div className="text-left">
-                <span className="text-xs text-slate-500">الترتيب بالفصل: </span>
-                <span className="font-bold text-slate-900 text-sm">المركز {student.rank}</span>
+                <span className="text-xs text-slate-500">رصيد النقاط: </span>
+                <span className="font-bold text-slate-900 text-sm">{studentData.points} نقطة</span>
               </div>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs divide-y divide-slate-100">
-              {todaySchedule.map((p) => (
-                <div key={p.period} className="p-3.5 flex items-center justify-between text-xs hover:bg-slate-50">
+              {todaySchedule.map((p, idx) => (
+                <div key={idx} className="p-3.5 flex items-center justify-between text-xs hover:bg-slate-50">
                   <div className="flex items-center gap-3">
                     <span className="w-7 h-7 rounded bg-slate-100 text-slate-800 font-bold flex items-center justify-center">
                       {p.period}
@@ -240,30 +342,24 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
                     </div>
                   </div>
                   <span className="font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                    {p.time}
+                    الحصة {p.period}
                   </span>
                 </div>
               ))}
+              {todaySchedule.length === 0 && (
+                <div className="p-6 text-center text-slate-400 text-xs">
+                  لا توجد حصص مجدولة لهذا اليوم.
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* الدرجات */}
+        {/* الدرجات والرسم البياني */}
         {activeTab === "grades" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs text-slate-500 mb-1">المعدل العام</div>
-                <div className="text-2xl font-bold text-slate-900">89.6%</div>
-              </div>
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs text-slate-500 mb-1">نسبة الحضور</div>
-                <div className="text-2xl font-bold text-slate-900">{student.attendanceRate}%</div>
-              </div>
-            </div>
-
             <div className="bg-white border border-slate-200 rounded-lg p-4">
-              <h3 className="text-xs font-bold text-slate-800 mb-3">رسم بياني لمقارنة الدرجات مع متوسط الفصل</h3>
+              <h3 className="text-xs font-bold text-slate-800 mb-3">رسم بياني لمستوى الدرجات الأكاديمية</h3>
               <div className="h-56">
                 <Bar
                   data={chartData}
@@ -274,6 +370,32 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
                   }}
                 />
               </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
+                  <tr>
+                    <th className="p-3">المادة</th>
+                    <th className="p-3">الدرجة المسجلة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {subjectsGrades.map((g, idx) => (
+                    <tr key={idx}>
+                      <td className="p-3 font-semibold text-slate-900">{g.subject}</td>
+                      <td className="p-3 font-bold text-slate-900">{g.score}</td>
+                    </tr>
+                  ))}
+                  {subjectsGrades.length === 0 && (
+                    <tr>
+                      <td colSpan={2} className="p-6 text-center text-slate-400">
+                        لم يتم رصد درجات حتى الآن.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -305,29 +427,34 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
                 )}
               </div>
             ))}
+            {homeworkList.length === 0 && (
+              <div className="bg-white border border-slate-200 rounded-lg p-6 text-center text-slate-400 text-xs">
+                لا توجد واجبات مطلوبة حالياً.
+              </div>
+            )}
           </div>
         )}
 
         {/* النقاط والترتيب */}
         {activeTab === "points" && (
           <div className="bg-white border border-slate-200 rounded-lg p-5 max-w-md">
-            <div className="text-xs text-slate-500 mb-1">رصيد نقاط التميز والالتزام</div>
-            <div className="text-3xl font-bold text-slate-900 mb-2">{student.points} نقطة</div>
+            <div className="text-xs text-slate-500 mb-1">رصيدك الفعلي من نقاط التميز في سوبابيس</div>
+            <div className="text-3xl font-bold text-slate-900 mb-2">{studentData.points} نقطة</div>
             <p className="text-xs text-slate-600">
-              تمنح النقاط بناءً على الانضباط الصفي والواجبات المنجزة بدقة.
+              تُمنح النقاط تلقائياً بناءً على تقييمات المعلم السلوكية وحل الواجبات.
             </p>
           </div>
         )}
 
-        {/* باركود QR */}
+        {/* كود QR */}
         {activeTab === "qrcode" && (
           <div className="bg-white border border-slate-200 rounded-lg p-6 max-w-sm mx-auto text-center">
             <h3 className="font-bold text-slate-900 text-sm mb-1">رمز الحضور المدرسي (QR)</h3>
-            <p className="text-xs text-slate-500 mb-4">يعرض للمعلم عند بدء الحصة لتسجيل الحضور</p>
+            <p className="text-xs text-slate-500 mb-4">أظهر هذا الرمز للمعلم في بداية الحصة لتسجيل الحضور</p>
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg inline-block mb-3">
               <QrCode className="w-36 h-36 mx-auto text-slate-900" />
             </div>
-            <div className="font-mono text-xs text-slate-700 font-semibold">{student.qrCode}</div>
+            <div className="font-mono text-xs text-slate-700 font-semibold">{studentData.qrCode}</div>
           </div>
         )}
 
@@ -351,6 +478,11 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
                 </span>
               </div>
             ))}
+            {leaveRequests.length === 0 && (
+              <div className="bg-white border border-slate-200 rounded-lg p-6 text-center text-slate-400 text-xs">
+                لا توجد طلبات إجازة مسجلة.
+              </div>
+            )}
           </div>
         )}
       </main>

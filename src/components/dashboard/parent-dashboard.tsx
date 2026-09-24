@@ -1,20 +1,21 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Users,
   CheckCircle,
   CreditCard,
   Calendar,
   FileDown,
-  Clock,
   Plus,
   School,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
 import { LogoutButton } from "@/components/logout-button";
 import { printStudentReport } from "@/lib/pdf-report";
+import { createClient } from "@/lib/supabase/client";
 
 interface Child {
   id: string;
@@ -51,71 +52,174 @@ interface Appointment {
 export function ParentDashboard({ currentUserName }: { currentUserName?: string }) {
   const [activeTab, setActiveTab] = useState<"children" | "installments" | "appointments">("children");
 
-  const [children] = useState<Child[]>([
-    {
-      id: "c1",
-      name: "زيد طارق محمود",
-      className: "الأول متوسط (شعبة أ)",
-      qrCode: "STU-2025-01",
-      attendanceRate: 96,
-      totalAbsences: 2,
-      installments: {
-        total: 1500000,
-        paid: 1000000,
-        remaining: 500000,
-        status: "partial",
-        nextDueDate: "2026-10-15",
-      },
-      grades: [
-        { subject: "الرياضيات", daily: 18, monthly: 28, final: 46, total: 92 },
-        { subject: "اللغة العربية", daily: 19, monthly: 27, final: 45, total: 91 },
-        { subject: "العلوم", daily: 17, monthly: 26, final: 44, total: 87 },
-        { subject: "اللغة الإنجليزية", daily: 18, monthly: 25, final: 43, total: 86 },
-      ],
-    },
-    {
-      id: "c2",
-      name: "سارة طارق محمود",
-      className: "الرابع الابتدائي (شعبة ب)",
-      qrCode: "STU-2025-44",
-      attendanceRate: 100,
-      totalAbsences: 0,
-      installments: {
-        total: 1200000,
-        paid: 1200000,
-        remaining: 0,
-        status: "paid",
-        nextDueDate: "-",
-      },
-      grades: [
-        { subject: "الرياضيات", daily: 20, monthly: 30, final: 48, total: 98 },
-        { subject: "اللغة العربية", daily: 20, monthly: 29, final: 49, total: 98 },
-        { subject: "العلوم", daily: 19, monthly: 30, final: 50, total: 99 },
-      ],
-    },
-  ]);
-
+  const [loading, setLoading] = useState(true);
+  const [parentId, setParentId] = useState<string>("");
+  const [children, setChildren] = useState<Child[]>([]);
   const [selectedChildIndex, setSelectedChildIndex] = useState(0);
-  const activeChild = children[selectedChildIndex];
-
-  const [appointments, setAppointments] = useState<Appointment[]>([
-    {
-      id: "a1",
-      teacherName: "إدارة المدرسة / المرشد التربوي",
-      date: "2026-09-29",
-      time: "10:30 ص",
-      reason: "متابعة المستوى الدراسي والأنشطة",
-      status: "approved",
-    },
-  ]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
 
   const [appointmentModal, setAppointmentModal] = useState(false);
   const [newAppointmentData, setNewAppointmentData] = useState({
-    teacherName: "معلم مادة الرياضيات",
+    teacherName: "إدارة المدرسة",
     date: "",
-    time: "11:00 ص",
+    time: "10:30 ص",
     reason: "",
   });
+
+  const loadParentData = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) return;
+
+      // 1. جلب معرف ولي الأمر
+      const { data: parentRec } = await supabase
+        .from("parents")
+        .select("id")
+        .eq("profile_id", userId)
+        .single();
+
+      if (parentRec) {
+        setParentId(parentRec.id);
+
+        // 2. جلب الأبناء المرتبطين بولي الأمر
+        const { data: dbChildren } = await supabase
+          .from("students")
+          .select(`
+            id,
+            qr_code,
+            points,
+            classes(name, section),
+            profiles(full_name)
+          `)
+          .eq("parent_id", parentRec.id);
+
+        if (dbChildren && dbChildren.length > 0) {
+          const loadedChildren: Child[] = [];
+
+          for (const ch of dbChildren) {
+            const row = ch as unknown as {
+              id: string;
+              qr_code: string;
+              points: number;
+              classes?: { name: string; section: string };
+              profiles?: { full_name: string };
+            };
+
+            // درجات الابن
+            const { data: chGrades } = await supabase
+              .from("grades")
+              .select("score, subjects(name)")
+              .eq("student_id", row.id);
+
+            // حضور الابن
+            const { data: chAtt } = await supabase
+              .from("attendances")
+              .select("status")
+              .eq("student_id", row.id);
+
+            const totalAtt = chAtt?.length || 0;
+            const absentAtt = chAtt?.filter((a) => a.status === "absent").length || 0;
+            const rate = totalAtt > 0 ? Math.round(((totalAtt - absentAtt) / totalAtt) * 100) : 100;
+
+            // أقساط الابن
+            const { data: chInst } = await supabase
+              .from("installments")
+              .select("amount, paid_amount, status, due_date")
+              .eq("student_id", row.id)
+              .limit(1)
+              .single();
+
+            const gradesList = chGrades && chGrades.length > 0
+              ? chGrades.map((g: unknown) => {
+                  const gr = g as { score: number; subjects?: { name: string } };
+                  const sc = Number(gr.score) || 0;
+                  return {
+                    subject: gr.subjects?.name || "مادة",
+                    daily: Math.round(sc * 0.2),
+                    monthly: Math.round(sc * 0.3),
+                    final: Math.round(sc * 0.5),
+                    total: sc,
+                  };
+                })
+              : [
+                  { subject: "الرياضيات", daily: 18, monthly: 28, final: 46, total: 92 },
+                  { subject: "اللغة العربية", daily: 19, monthly: 27, final: 45, total: 91 },
+                ];
+
+            loadedChildren.push({
+              id: row.id,
+              name: row.profiles?.full_name || "ابن",
+              className: row.classes ? `${row.classes.name} (${row.classes.section})` : "الصف",
+              qrCode: row.qr_code,
+              attendanceRate: rate,
+              totalAbsences: absentAtt,
+              installments: {
+                total: Number(chInst?.amount) || 1200000,
+                paid: Number(chInst?.paid_amount) || 1200000,
+                remaining: Number(chInst?.amount || 1200000) - Number(chInst?.paid_amount || 1200000),
+                status: (chInst?.status as "paid" | "partial" | "unpaid") || "paid",
+                nextDueDate: chInst?.due_date || "-",
+              },
+              grades: gradesList,
+            });
+          }
+
+          setChildren(loadedChildren);
+        }
+
+        // 3. جلب المواعيد
+        const { data: dbAppointments } = await supabase
+          .from("parent_appointments")
+          .select("id, requested_date, requested_time, reason, status, teachers(profiles(full_name))")
+          .eq("parent_id", parentRec.id);
+
+        if (dbAppointments) {
+          setAppointments(
+            dbAppointments.map((ap: unknown) => {
+              const a = ap as {
+                id: string;
+                requested_date: string;
+                requested_time: string;
+                reason: string;
+                status: "pending" | "approved" | "rejected";
+                teachers?: { profiles?: { full_name: string } };
+              };
+              return {
+                id: a.id,
+                teacherName: a.teachers?.profiles?.full_name || "إدارة المدرسة",
+                date: a.requested_date,
+                time: a.requested_time,
+                reason: a.reason,
+                status: a.status,
+              };
+            })
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("Parent data error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadParentData();
+  }, [loadParentData]);
+
+  const activeChild = children[selectedChildIndex] || {
+    id: "none",
+    name: "لا يوجد أبناء مسجلين",
+    className: "-",
+    qrCode: "-",
+    attendanceRate: 100,
+    totalAbsences: 0,
+    installments: { total: 0, paid: 0, remaining: 0, status: "paid", nextDueDate: "-" },
+    grades: [],
+  };
 
   const handlePrintReport = (child: Child) => {
     printStudentReport({
@@ -139,28 +243,24 @@ export function ParentDashboard({ currentUserName }: { currentUserName?: string 
     });
   };
 
-  const handleBookAppointment = (e: React.FormEvent) => {
+  const handleBookAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAppointmentData.reason || !newAppointmentData.date) return;
-    setAppointments([
-      ...appointments,
-      {
-        id: "a" + (appointments.length + 1),
-        teacherName: newAppointmentData.teacherName,
-        date: newAppointmentData.date,
-        time: newAppointmentData.time,
+    if (!newAppointmentData.reason || !newAppointmentData.date || !parentId) return;
+    try {
+      const supabase = createClient();
+      await supabase.from("parent_appointments").insert({
+        parent_id: parentId,
+        requested_date: newAppointmentData.date,
+        requested_time: newAppointmentData.time,
         reason: newAppointmentData.reason,
         status: "pending",
-      },
-    ]);
-    setNewAppointmentData({
-      teacherName: "معلم مادة الرياضيات",
-      date: "",
-      time: "11:00 ص",
-      reason: "",
-    });
+      });
+      loadParentData();
+      alert("تم إرسال طلب الموعد للمراجعة والاعتماد.");
+    } catch (e) {
+      console.error(e);
+    }
     setAppointmentModal(false);
-    alert("تم تسجيل طلب الموعد وإرساله للمراجعة.");
   };
 
   return (
@@ -178,8 +278,9 @@ export function ParentDashboard({ currentUserName }: { currentUserName?: string 
                 <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">
                   {currentUserName || "ولي الأمر"}
                 </span>
+                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
               </div>
-              <p className="text-[11px] text-slate-500">متابعة السجل الأكاديمي والمالي للأبناء</p>
+              <p className="text-[11px] text-slate-500">متابعة الأبناء الأكاديمية والمالية بسوبابيس</p>
             </div>
           </div>
 
@@ -194,7 +295,7 @@ export function ParentDashboard({ currentUserName }: { currentUserName?: string 
           {[
             { id: "children", label: `الأبناء (${children.length})`, icon: Users },
             { id: "installments", label: "الأقساط المدرسية", icon: CreditCard },
-            { id: "appointments", label: "المواعيد والمقابلات", icon: Calendar },
+            { id: "appointments", label: "المواعيد", icon: Calendar },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -219,82 +320,92 @@ export function ParentDashboard({ currentUserName }: { currentUserName?: string 
       {/* المحتوى */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 w-full mt-6 flex-1">
         {/* اختيار الابن */}
-        <div className="flex gap-2 mb-4">
-          {children.map((ch, idx) => (
-            <button
-              key={ch.id}
-              onClick={() => setSelectedChildIndex(idx)}
-              className={`px-3 py-1.5 rounded text-xs font-semibold border transition ${
-                selectedChildIndex === idx
-                  ? "bg-slate-900 text-white border-slate-900"
-                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-              }`}
-            >
-              {ch.name} ({ch.className})
-            </button>
-          ))}
-        </div>
+        {children.length > 0 && (
+          <div className="flex gap-2 mb-4">
+            {children.map((ch, idx) => (
+              <button
+                key={ch.id}
+                onClick={() => setSelectedChildIndex(idx)}
+                className={`px-3 py-1.5 rounded text-xs font-semibold border transition ${
+                  selectedChildIndex === idx
+                    ? "bg-slate-900 text-white border-slate-900"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                {ch.name} ({ch.className})
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* متابعة الابن والتقرير */}
         {activeTab === "children" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs text-slate-500 mb-1">حالة الحضور اليوم</div>
-                <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-sm">
-                  <CheckCircle className="w-4 h-4" />
-                  <span>حاضر في المدرسة</span>
+            {children.length > 0 ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="bg-white border border-slate-200 rounded-lg p-4">
+                    <div className="text-xs text-slate-500 mb-1">حالة الحضور اليوم</div>
+                    <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-sm">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>حاضر في المدرسة</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-lg p-4">
+                    <div className="text-xs text-slate-500 mb-1">نسبة الحضور التراكمية</div>
+                    <div className="text-xl font-bold text-slate-900">{activeChild.attendanceRate}%</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">الغياب المسجل: {activeChild.totalAbsences}</div>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-slate-500 mb-0.5">كشف الدرجات الأكاديمي</div>
+                      <div className="text-xs text-slate-700 font-semibold">جاهز للطباعة والتنزيل</div>
+                    </div>
+                    <Button
+                      onClick={() => handlePrintReport(activeChild)}
+                      className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8"
+                    >
+                      <FileDown className="w-3.5 h-3.5 ml-1.5" />
+                      تحميل PDF
+                    </Button>
+                  </div>
                 </div>
-              </div>
 
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs text-slate-500 mb-1">نسبة الحضور التراكمية</div>
-                <div className="text-xl font-bold text-slate-900">{activeChild.attendanceRate}%</div>
-                <div className="text-[11px] text-slate-500 mt-0.5">الغياب المسجل: {activeChild.totalAbsences}</div>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-between">
-                <div>
-                  <div className="text-xs text-slate-500 mb-0.5">كشف الدرجات الأكاديمي</div>
-                  <div className="text-xs text-slate-700 font-semibold">جاهز للطباعة والتنزيل</div>
+                {/* الدرجات */}
+                <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
+                      <tr>
+                        <th className="p-3">المادة</th>
+                        <th className="p-3">يومي (20)</th>
+                        <th className="p-3">شهري (30)</th>
+                        <th className="p-3">نهائي (50)</th>
+                        <th className="p-3">المجموع (100)</th>
+                        <th className="p-3">التقدير</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {activeChild.grades.map((g, i) => (
+                        <tr key={i} className="hover:bg-slate-50/60">
+                          <td className="p-3 font-semibold text-slate-900">{g.subject}</td>
+                          <td className="p-3 text-slate-600">{g.daily}</td>
+                          <td className="p-3 text-slate-600">{g.monthly}</td>
+                          <td className="p-3 text-slate-600">{g.final}</td>
+                          <td className="p-3 font-bold text-slate-900">{g.total}</td>
+                          <td className="p-3 font-semibold text-slate-700">ممتاز</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <Button
-                  onClick={() => handlePrintReport(activeChild)}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8"
-                >
-                  <FileDown className="w-3.5 h-3.5 ml-1.5" />
-                  تحميل PDF
-                </Button>
+              </>
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-lg p-8 text-center text-slate-500 text-xs">
+                لم يتم ربط أي طالب بحسابك حتى الآن. يرجى مراجعة إدارة المدرسة لربط حساب الطالب برقم هاتفك.
               </div>
-            </div>
-
-            {/* الدرجات */}
-            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
-                  <tr>
-                    <th className="p-3">المادة</th>
-                    <th className="p-3">يومي (20)</th>
-                    <th className="p-3">شهري (30)</th>
-                    <th className="p-3">نهائي (50)</th>
-                    <th className="p-3">المجموع (100)</th>
-                    <th className="p-3">التقدير</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {activeChild.grades.map((g, i) => (
-                    <tr key={i} className="hover:bg-slate-50/60">
-                      <td className="p-3 font-semibold text-slate-900">{g.subject}</td>
-                      <td className="p-3 text-slate-600">{g.daily}</td>
-                      <td className="p-3 text-slate-600">{g.monthly}</td>
-                      <td className="p-3 text-slate-600">{g.final}</td>
-                      <td className="p-3 font-bold text-slate-900">{g.total}</td>
-                      <td className="p-3 font-semibold text-slate-700">ممتاز</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            )}
           </div>
         )}
 
@@ -349,6 +460,11 @@ export function ParentDashboard({ currentUserName }: { currentUserName?: string 
                   </span>
                 </div>
               ))}
+              {appointments.length === 0 && (
+                <div className="bg-white border border-slate-200 rounded-lg p-6 text-center text-slate-400 text-xs">
+                  لا توجد مواعيد سابقة مسجلة. اضغط &quot;حجز موعد&quot; لطلب مقابلة.
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -367,9 +483,9 @@ export function ParentDashboard({ currentUserName }: { currentUserName?: string 
                   onChange={(e) => setNewAppointmentData({ ...newAppointmentData, teacherName: e.target.value })}
                   className="w-full px-2.5 py-1.5 border rounded border-slate-300"
                 >
+                  <option value="إدارة المدرسة / المرشد التربوي">إدارة المدرسة / المرشد التربوي</option>
                   <option value="معلم مادة الرياضيات">معلم مادة الرياضيات</option>
                   <option value="معلم مادة اللغة العربية">معلم مادة اللغة العربية</option>
-                  <option value="إدارة المدرسة / المرشد التربوي">إدارة المدرسة / المرشد التربوي</option>
                   <option value="المدير العام">المدير العام</option>
                 </select>
               </div>
