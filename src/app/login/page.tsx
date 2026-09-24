@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Lock, Mail, AlertCircle, School } from "lucide-react";
 import { InstallPWA } from "@/components/install-pwa";
@@ -10,22 +10,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-
-  // فحص الجلسة في الخلفية دون حجب واجهة تسجيل الدخول
-  useEffect(() => {
-    async function verifySession() {
-      try {
-        const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          window.location.replace("/dashboard");
-        }
-      } catch (e) {
-        // تجاهل أي بطء في الخلفية
-      }
-    }
-    verifySession();
-  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +43,7 @@ export default function LoginPage() {
           throw new Error("هذا الحساب معطل حالياً من قبل إدارة المدرسة.");
         }
 
+        // التوجيه للوحة التحكم بعد تسجيل الدخول الناجح
         window.location.replace("/dashboard");
       }
     } catch (err: unknown) {
@@ -88,7 +73,7 @@ export default function LoginPage() {
         </div>
       </header>
 
-      {/* نموذج تسجيل الدخول الفوري */}
+      {/* نموذج تسجيل الدخول الثابت والمستقر */}
       <main className="flex-1 flex items-center justify-center p-4">
         <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl shadow-sm p-6 sm:p-8">
           <div className="text-center mb-6">
