@@ -5,7 +5,19 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const supabase = createServerSupabaseClient();
+    let token = process.env.TELEGRAM_BOT_TOKEN;
+
+    if (!token) {
+      try {
+        const { data: sData } = await supabase.from("school_settings").select("telegram_bot_token").limit(1).single();
+        if (sData?.telegram_bot_token) {
+          token = sData.telegram_bot_token;
+        }
+      } catch (e) {
+        console.warn("Could not query telegram token from school_settings:", e);
+      }
+    }
 
     const message = body?.message;
     if (!message || !message.text) {
@@ -14,7 +26,6 @@ export async function POST(req: NextRequest) {
 
     const chatId = message.chat.id;
     const text = message.text.trim();
-    const supabase = createServerSupabaseClient();
 
     // 1. أمر /احصائية_اليوم للمدير (بيانات حية من الجداول)
     if (text === "/احصائية_اليوم" || text.startsWith("/احصائية_اليوم")) {

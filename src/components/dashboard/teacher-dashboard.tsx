@@ -73,6 +73,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [lessonPlans, setLessonPlans] = useState<{ id: string; date: string; period: number; className: string; title: string; objectives: string }[]>([]);
   const [behaviorNotes, setBehaviorNotes] = useState<{ id: string; studentName: string; type: string; note: string; points: number }[]>([]);
+  const [botUsername, setBotUsername] = useState<string>("");
 
   // النوافذ
   const [newHwModal, setNewHwModal] = useState(false);
@@ -88,6 +89,16 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id;
+
+      // 0. جلب معرّف بوت التيليجرام من إعدادات المدرسة
+      try {
+        const { data: dbSettings } = await supabase.from("school_settings").select("telegram_bot_username").limit(1).single();
+        if (dbSettings?.telegram_bot_username) {
+          setBotUsername(dbSettings.telegram_bot_username);
+        }
+      } catch (err) {
+        console.warn("Could not fetch school settings:", err);
+      }
 
       // 1. جلب الصفوف
       const { data: dbClasses } = await supabase.from("classes").select("id, name, section");
@@ -352,6 +363,31 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
           </div>
 
           <div className="flex items-center gap-2">
+            {botUsername ? (
+              <a
+                href={`https://t.me/${botUsername}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#229ED9] hover:bg-[#1e8ec3] text-white rounded-md text-xs font-semibold shadow-xs transition"
+                title={`فتح بوت التيليجرام: @${botUsername}`}
+              >
+                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
+                </svg>
+                <span>بوت التيليجرام</span>
+              </a>
+            ) : (
+              <button
+                onClick={() => alert("لم يتم ضبط معرّف يوزر بوت التيليجرام بعد في إعدادات إدارة المدرسة.")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md text-xs font-semibold transition border border-slate-200"
+                title="بوت التيليجرام"
+              >
+                <svg className="w-3.5 h-3.5 fill-current text-slate-500" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
+                </svg>
+                <span>بوت التيليجرام</span>
+              </button>
+            )}
             <InstallPWA variant="badge" />
             <LogoutButton />
           </div>
@@ -389,6 +425,38 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
 
       {/* المحتوى */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 w-full mt-6 flex-1">
+        {/* بطاقة بوت التيليجرام للمعلم */}
+        <div className="bg-gradient-to-r from-sky-600 to-blue-700 text-white rounded-xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+              <svg className="w-6 h-6 fill-current text-white" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
+              </svg>
+            </div>
+            <div>
+              <h2 className="font-bold text-sm">بوت التيليجرام لمتابعة الحصص والإشعارات</h2>
+              <p className="text-xs text-sky-100">
+                {botUsername ? (
+                  <>
+                    يمكنك الدخول للبوت المدرسي <span className="font-mono underline font-bold">@{botUsername}</span> وإرسال أمر <span className="font-mono bg-white/20 px-1 py-0.5 rounded font-bold">/دروسي_اليوم</span> لمشاهدة حصصك مباشرة في هاتفك.
+                  </>
+                ) : (
+                  "بإمكان إدارة المدرسة تحديد اسم مستخدم البوت (Bot Username) في تبويب الإعدادات لتمكين المعلمين والطلاب من الدخول إليه مباشرة."
+                )}
+              </p>
+            </div>
+          </div>
+          {botUsername && (
+            <a
+              href={`https://t.me/${botUsername}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-white text-blue-700 hover:bg-sky-50 rounded-lg text-xs font-bold shadow-xs transition self-start sm:self-auto shrink-0"
+            >
+              <span>فتح البوت الآن ↗</span>
+            </a>
+          )}
+        </div>
         {/* الجدول الأسبوعي */}
         {activeTab === "schedule" && (
           <div className="space-y-4">

@@ -104,6 +104,7 @@ export function ManagementDashboard({
     workingDays: 5,
     periodsPerDay: 5,
     telegramBotToken: "",
+    telegramBotUsername: "",
     academicYear: "2025-2026",
   });
 
@@ -153,6 +154,7 @@ export function ManagementDashboard({
           workingDays: dbSettings.working_days || 5,
           periodsPerDay: dbSettings.periods_per_day || 5,
           telegramBotToken: dbSettings.telegram_bot_token || "",
+          telegramBotUsername: dbSettings.telegram_bot_username || "",
           academicYear: dbSettings.academic_year || "2025-2026",
         });
       }
@@ -1445,6 +1447,36 @@ export function ManagementDashboard({
               <p className="text-[11px] text-slate-500 mt-1">التوكن محمي ومشفر بالكامل ولا يمكن لأي طالب أو معلم قراءته.</p>
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">معرّف / يوزر بوت التيليجرام (Bot Username):</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={settings.telegramBotUsername}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/^@/, "").trim();
+                    setSettings({ ...settings, telegramBotUsername: clean });
+                  }}
+                  placeholder="مثال: MySchool_bot"
+                  className="flex-1 px-3 py-2 border rounded-md border-slate-300 text-xs font-mono"
+                  dir="ltr"
+                />
+                {settings.telegramBotUsername && (
+                  <a
+                    href={`https://t.me/${settings.telegramBotUsername}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-2 bg-sky-50 text-sky-700 border border-sky-200 rounded-md text-xs hover:bg-sky-100 transition whitespace-nowrap"
+                  >
+                    <span>فتح البوت ↗</span>
+                  </a>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                ضع يوزر البوت الذي أنشأته في BotFather (بدون علامة @). هذا المعرف يُمكّن المعلمين والطلاب من الدخول للبوت بنقرة واحدة من لوحتهم.
+              </p>
+            </div>
+
             <div className="pt-2">
               <Button
                 onClick={async () => {
@@ -1454,8 +1486,9 @@ export function ManagementDashboard({
                     working_days: settings.workingDays,
                     periods_per_day: settings.periodsPerDay,
                     telegram_bot_token: settings.telegramBotToken,
+                    telegram_bot_username: settings.telegramBotUsername,
                   });
-                  alert("تم حفظ الإعدادات في قاعدة البيانات بنجاح.");
+                  alert("تم حفظ الإعدادات ومعرّف بوت التيليجرام في قاعدة البيانات بنجاح.");
                 }}
                 className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
               >
