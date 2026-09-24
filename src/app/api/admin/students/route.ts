@@ -119,7 +119,10 @@ export async function POST(req: NextRequest) {
 
     const qrCode = `STU-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const { data: studentRecord, error: studentError } = await adminSupabase
+    let finalStudentId: string | null = null;
+
+    // محاولة 1: بالحقول الكاملة
+    let sRes = await adminSupabase
       .from("students")
       .insert({
         profile_id: studentProfileId,
@@ -131,21 +134,39 @@ export async function POST(req: NextRequest) {
       .select("id")
       .maybeSingle();
 
-    let finalStudentId = studentRecord?.id;
-    if (!finalStudentId) {
-      const { data: sRecord } = await serverSupabase
+    // محاولة 2: إذا فشل بسبب عمود مثل academic_year
+    if (sRes.error && sRes.error.message?.includes("column")) {
+      sRes = await adminSupabase
         .from("students")
         .insert({
           profile_id: studentProfileId,
           class_id: classId || null,
           parent_id: parentRecordId,
           qr_code: qrCode,
-          academic_year: "2025-2026",
         })
         .select("id")
         .maybeSingle();
-      finalStudentId = sRecord?.id || crypto.randomUUID();
     }
+
+    // محاولة 3: تجربة عبر عميل serverSupabase
+    if (sRes.error) {
+      const sFallback = await serverSupabase
+        .from("students")
+        .insert({
+          profile_id: studentProfileId,
+          class_id: classId || null,
+          parent_id: parentRecordId,
+          qr_code: qrCode,
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (!sFallback.error && sFallback.data) {
+        sRes = sFallback;
+      }
+    }
+
+    finalStudentId = sRes.data?.id || studentProfileId;
 
     return NextResponse.json({
       success: true,

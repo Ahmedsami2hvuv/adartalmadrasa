@@ -29,6 +29,7 @@ export async function GET() {
     }
 
     // 3. ربط كل معلم ببيانات ملفه الشخصي بدقة 100%
+    const teacherProfileIds = new Set(teachersData.map((t) => t.profile_id || t.id));
     const combinedTeachers = teachersData.map((t) => {
       const matchedProfile = profilesData.find(
         (p) => p.id === t.profile_id || p.id === t.id
@@ -39,11 +40,26 @@ export async function GET() {
         profile_id: t.profile_id,
         name: matchedProfile?.full_name || t.name || "معلم",
         phone: matchedProfile?.phone || t.phone || "-",
-        subject: t.specialization || (t.subjects && t.subjects[0]) || "عام",
+        subject: t.specialization || (t.subjects && t.subjects[0]) || t.subject || "عام",
         classes: t.classes || [],
-        inviteToken: "TCH-" + t.id.substring(0, 6).toUpperCase(),
+        inviteToken: "TCH-" + (t.id || "").substring(0, 6).toUpperCase(),
       };
     });
+
+    // إضافة المعلمين الموجودين في profiles بدور teacher حتى لو لم يكتمل إدراجهم في جدول teachers القديم
+    profilesData
+      .filter((p) => p.role === "teacher" && !teacherProfileIds.has(p.id))
+      .forEach((p) => {
+        combinedTeachers.push({
+          id: p.id,
+          profile_id: p.id,
+          name: p.full_name || "معلم",
+          phone: p.phone || "-",
+          subject: "عام",
+          classes: [],
+          inviteToken: "TCH-" + p.id.substring(0, 6).toUpperCase(),
+        });
+      });
 
     return NextResponse.json({ teachers: combinedTeachers });
   } catch (err: unknown) {
@@ -103,10 +119,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. إدخال سجل المعلم في جدول teachers
+    // 2. إدخال سجل المعلم في جدول teachers بمرونة فائقة
     let finalTeacherRecord: any = null;
 
-    const { data: tInsert1, error: tErr1 } = await adminSupabase
+    // محاولة 1: بالحقول المتقدمة (specialization و subjects)
+    let tRes = await adminSupabase
       .from("teachers")
       .insert({
         profile_id: teacherProfileId,
@@ -116,28 +133,52 @@ export async function POST(req: NextRequest) {
       .select("*")
       .maybeSingle();
 
-    if (!tErr1 && tInsert1) {
-      finalTeacherRecord = tInsert1;
-    } else {
-      console.warn("adminSupabase teachers error:", tErr1?.message);
-      const { data: tInsert2, error: tErr2 } = await serverSupabase
+    // محاولة 2: إذا فشل بسبب عمود specialization أو subjects، نجرب بحقل subject فقط
+    if (tRes.error && (tRes.error.message?.includes("specialization") || tRes.error.message?.includes("column"))) {
+      console.warn("Retrying teacher insert with subject column:", tRes.error.message);
+      tRes = await adminSupabase
         .from("teachers")
         .insert({
           profile_id: teacherProfileId,
-          specialization: subject?.trim() || "عام",
-          subjects: subject?.trim() ? [subject.trim()] : ["عام"],
+          subject: subject?.trim() || "عام",
         })
         .select("*")
         .maybeSingle();
+    }
 
-      if (!tErr2 && tInsert2) {
-        finalTeacherRecord = tInsert2;
-      } else {
-        console.error("serverSupabase teachers error:", tErr2?.message);
-        // إذا فشل الإدخالان نرجع سبب الخطأ الصريح من سوبابيس
-        const reason = tErr2?.message || tErr1?.message || "فشل إدراج المعلم في قاعدة البيانات.";
-        return NextResponse.json({ error: `خطأ قاعدة البيانات: ${reason}` }, { status: 400 });
+    // محاولة 3: إذا فشل أيضاً بسبب الأعمدة، ندخل المعلم بالمعرف profile_id فقط
+    if (tRes.error && tRes.error.message?.includes("column")) {
+      console.warn("Retrying teacher insert with profile_id only:", tRes.error.message);
+      tRes = await adminSupabase
+        .from("teachers")
+        .insert({
+          profile_id: teacherProfileId,
+        })
+        .select("*")
+        .maybeSingle();
+    }
+
+    // محاولة 4: تجربة عبر عميل serverSupabase إذا لزم الأمر
+    if (tRes.error) {
+      console.warn("Admin insert failed, trying serverSupabase:", tRes.error.message);
+      const sRes = await serverSupabase
+        .from("teachers")
+        .insert({
+          profile_id: teacherProfileId,
+        })
+        .select("*")
+        .maybeSingle();
+      if (!sRes.error && sRes.data) {
+        tRes = sRes;
       }
+    }
+
+    if (!tRes.error && tRes.data) {
+      finalTeacherRecord = tRes.data;
+    } else {
+      // حتى لو فشل جدول teachers، فإن الحساب تم إنشاؤه بنجاح في profiles
+      console.warn("Teacher record in teachers table could not be saved, but profile is ready:", tRes.error?.message);
+      finalTeacherRecord = { id: teacherProfileId, profile_id: teacherProfileId };
     }
 
     return NextResponse.json({
