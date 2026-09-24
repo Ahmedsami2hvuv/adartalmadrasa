@@ -1,37 +1,31 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Lock, Mail, AlertCircle, School } from "lucide-react";
 import { InstallPWA } from "@/components/install-pwa";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [checkingAuth, setCheckingAuth] = useState(true);
 
-  // التحقق إن كان المستخدم مسجل دخول مسبقاً في سوبابيس
+  // فحص الجلسة في الخلفية دون حجب واجهة تسجيل الدخول
   useEffect(() => {
     async function verifySession() {
       try {
         const supabase = createClient();
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          router.replace("/dashboard");
-          return;
+          window.location.replace("/dashboard");
         }
       } catch (e) {
-        console.error("Auth check error:", e);
-      } finally {
-        setCheckingAuth(false);
+        // تجاهل أي بطء في الخلفية
       }
     }
     verifySession();
-  }, [router]);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,51 +40,34 @@ export default function LoginPage() {
       });
 
       if (error) {
-        if (error.message.includes("Invalid login credentials")) {
+        if (error.message.includes("Invalid login credentials") || error.message.includes("invalid")) {
           throw new Error("البريد الإلكتروني أو كلمة المرور غير صحيحة.");
         }
         throw error;
       }
 
       if (data?.user) {
-        // التحقق من الملف الشخصي في قاعدة البيانات
-        const { data: profile, error: profileErr } = await supabase
+        // فحص حالة الحساب
+        const { data: profile } = await supabase
           .from("profiles")
-          .select("role, is_active, full_name")
+          .select("is_active")
           .eq("id", data.user.id)
           .single();
 
-        if (profileErr || !profile) {
-          // في حال عدم وجود ملف شخصي، توجيهه للوحة الافتراضية
-          router.replace("/dashboard");
-          return;
-        }
-
-        if (profile.is_active === false) {
+        if (profile && profile.is_active === false) {
           await supabase.auth.signOut();
           throw new Error("هذا الحساب معطل حالياً من قبل إدارة المدرسة.");
         }
 
-        router.replace("/dashboard");
+        window.location.replace("/dashboard");
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "تعذر تسجيل الدخول، يرجى المحاولة لاحقاً.";
+      const message = err instanceof Error ? err.message : "تعذر تسجيل الدخول، يرجى التأكد من البيانات والمحاولة لاحقاً.";
       setErrorMsg(message);
     } finally {
       setLoading(false);
     }
   };
-
-  if (checkingAuth) {
-    return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center text-slate-600 text-sm" dir="rtl">
-        <div className="flex flex-col items-center gap-2">
-          <div className="w-7 h-7 border-3 border-slate-700 border-t-transparent rounded-full animate-spin" />
-          <span>جارٍ التحقق من الجلسة...</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col justify-between selection:bg-slate-800 selection:text-white" dir="rtl">
@@ -111,7 +88,7 @@ export default function LoginPage() {
         </div>
       </header>
 
-      {/* نموذج تسجيل الدخول المركزي */}
+      {/* نموذج تسجيل الدخول الفوري */}
       <main className="flex-1 flex items-center justify-center p-4">
         <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl shadow-sm p-6 sm:p-8">
           <div className="text-center mb-6">
@@ -138,7 +115,7 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@school.edu"
+                  placeholder="admin@school.edu"
                   required
                   autoFocus
                   className="w-full pl-3 pr-9 py-2.5 rounded-lg border border-slate-300 text-slate-900 text-sm focus:outline-none focus:ring-1 focus:ring-slate-800 focus:border-slate-800 placeholder:text-slate-400 bg-white"
