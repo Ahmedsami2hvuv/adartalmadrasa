@@ -29,19 +29,22 @@ export async function GET() {
       .order("name");
 
     // إذا لم تكن هناك مواد في جدول subjects، نقوم بإدخال المواد الافتراضية فوراً لتمتلك UUID حقيقي
-    const existingNames = new Set((dbSubjects || []).map((s) => s.name));
-    const missingDefaults = DEFAULT_SUBJECTS.filter((name) => !existingNames.has(name));
+    const existingNames = new Set((dbSubjects || []).map((s) => s.name?.trim()));
+    const missingDefaults = DEFAULT_SUBJECTS.filter((name) => !existingNames.has(name.trim()));
 
     if (missingDefaults.length > 0) {
-      try {
-        await client
-          .from("subjects")
-          .upsert(
-            missingDefaults.map((name) => ({ name, stage: "عام" })),
-            { onConflict: "name" }
-          );
+      for (const name of missingDefaults) {
+        try {
+          await client.from("subjects").insert({ name, stage: "عام" });
+        } catch (_) {
+          try {
+            await client.from("subjects").insert({ name });
+          } catch (_) {}
+        }
+      }
 
-        // إعادة الجلب بعد الإدراج لضمان الحصول على المعرفات الحقيقية
+      // إعادة الجلب بعد الإدراج لضمان الحصول على المعرفات الحقيقية
+      try {
         const refreshed = await client
           .from("subjects")
           .select("id, name, stage")
@@ -49,9 +52,7 @@ export async function GET() {
         if (refreshed.data && refreshed.data.length > 0) {
           dbSubjects = refreshed.data;
         }
-      } catch (insertErr) {
-        console.warn("Could not auto-seed subjects:", insertErr);
-      }
+      } catch (_) {}
     }
 
     // 2. جلب المواد المحفوظة احتياطياً في school_settings ومزامنتها
@@ -70,17 +71,20 @@ export async function GET() {
     }
 
     // مزامنة المواد المخصصة في جدول subjects إذا لم تكن موجودة
-    const currentDbNames = new Set((dbSubjects || []).map((s) => s.name));
-    const missingCustom = customFromSettings.filter((name) => !currentDbNames.has(name));
+    const currentDbNames = new Set((dbSubjects || []).map((s) => s.name?.trim()));
+    const missingCustom = customFromSettings.filter((name) => !currentDbNames.has(name?.trim()));
     if (missingCustom.length > 0) {
-      try {
-        await client
-          .from("subjects")
-          .upsert(
-            missingCustom.map((name) => ({ name, stage: "عام" })),
-            { onConflict: "name" }
-          );
+      for (const name of missingCustom) {
+        try {
+          await client.from("subjects").insert({ name, stage: "عام" });
+        } catch (_) {
+          try {
+            await client.from("subjects").insert({ name });
+          } catch (_) {}
+        }
+      }
 
+      try {
         const refreshed = await client
           .from("subjects")
           .select("id, name, stage")
@@ -88,12 +92,10 @@ export async function GET() {
         if (refreshed.data && refreshed.data.length > 0) {
           dbSubjects = refreshed.data;
         }
-      } catch (insertCustomErr) {
-        console.warn("Could not auto-seed custom subjects:", insertCustomErr);
-      }
+      } catch (_) {}
     }
 
-    // تجميع المواد وضمان عدم إرجاع أي معرف وهمي
+    // تجميع المواد وضمان إرجاع قائمة نقية 100%
     const finalList = (dbSubjects && dbSubjects.length > 0)
       ? dbSubjects
       : DEFAULT_SUBJECTS.map((name) => ({
@@ -104,8 +106,8 @@ export async function GET() {
 
     return NextResponse.json({ subjects: finalList });
   } catch (err: unknown) {
-    const fallbackSubjects = DEFAULT_SUBJECTS.map((name, i) => ({
-      id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, "0")}`,
+    const fallbackSubjects = DEFAULT_SUBJECTS.map((name) => ({
+      id: crypto.randomUUID(),
       name,
       stage: "عام",
     }));

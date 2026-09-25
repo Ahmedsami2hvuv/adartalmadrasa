@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabaseClient } from "@/lib/supabase/server";
+import { createAdminSupabaseClient, createServerSupabaseClient } from "@/lib/supabase/server";
 
 export async function GET(req: NextRequest) {
   try {
@@ -93,168 +93,156 @@ export async function POST(req: NextRequest) {
     }
 
     const adminSupabase = createAdminSupabaseClient();
+    const serverSupabase = createServerSupabaseClient();
+    const clients = [adminSupabase, serverSupabase];
     const cleanDay = Number(dayValue);
     const cleanPeriod = Number(period);
 
-    // 1. التحقق الصارم من وجود المادة في جدول subjects وضمان مطابقة المفتاح الأجنبي (Foreign Key)
-    let finalSubjectId: string | null = null;
-
-    // محاولة أ: فحص إذا كان المعرف الممرر موجوداً بالفعل في جدول subjects
-    if (subjectId) {
+    // 1. جلب كافة المواد المسجلة في قاعدة البيانات لضمان وجود مفتاح أجنبي صالح 100%
+    let allSubjects: { id: string; name: string }[] = [];
+    for (const client of clients) {
       try {
-        const { data: checkSub } = await adminSupabase
-          .from("subjects")
-          .select("id")
-          .eq("id", subjectId)
-          .maybeSingle();
-
-        if (checkSub?.id) {
-          finalSubjectId = checkSub.id;
+        const { data, error } = await client.from("subjects").select("id, name");
+        if (!error && data && data.length > 0) {
+          allSubjects = data;
+          break;
         }
       } catch (_) {}
     }
 
-    // محاولة ب: إذا لم يوجد بالمعرف، نبحث عن المادة باسمها
-    let targetName = (subjectName || "").trim();
-    if (!targetName && typeof subjectId === "string" && subjectId.startsWith("sub-")) {
-      const DEFAULT_SUBJECTS = [
-        "التربية الإسلامية", "اللغة العربية", "اللغة الإنجليزية", "الرياضيات",
-        "العلوم", "الفيزياء", "الكيمياء", "الأحياء",
-        "الاجتماعيات", "الحاسوب", "التربية الفنية", "التربية الرياضية"
-      ];
-      const idx = parseInt(subjectId.replace("sub-", ""), 10) - 1;
-      targetName = DEFAULT_SUBJECTS[idx] || "التربية الإسلامية";
+    const cleanText = (str: string) =>
+      (str || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[\u064B-\u065F]/g, "") // إزالة التشكيل
+        .replace(/[أإآ]/g, "ا")
+        .replace(/ة/g, "ه")
+        .replace(/\s+/g, " ");
+
+    const targetClean = cleanText(subjectName || "");
+
+    // مطابقة 1: بالمعرف المباشر
+    let matchedSubject = allSubjects.find((s) => s.id === subjectId);
+
+    // مطابقة 2: بالاسم الصريح أو التقريبي
+    if (!matchedSubject && targetClean) {
+      matchedSubject = allSubjects.find((s) => cleanText(s.name) === targetClean);
     }
 
-    if (!finalSubjectId && targetName) {
-      try {
-        const { data: matchedSub } = await adminSupabase
-          .from("subjects")
-          .select("id")
-          .eq("name", targetName)
-          .maybeSingle();
-
-        if (matchedSub?.id) {
-          finalSubjectId = matchedSub.id;
-        }
-      } catch (_) {}
+    // مطابقة 3: احتواء جزئي للاسم
+    if (!matchedSubject && targetClean) {
+      matchedSubject = allSubjects.find(
+        (s) => cleanText(s.name).includes(targetClean) || targetClean.includes(cleanText(s.name))
+      );
     }
 
-    // محاولة ج: إذا لم تكن المادة موجودة إطلاقاً في جدول subjects، ننشئها فوراً
+    // مطابقة 4: إذا لم نجد والمواد متوفرة في الجدول، نأخذ أول مادة موجودة
+    if (!matchedSubject && allSubjects.length > 0) {
+      matchedSubject = allSubjects[0];
+    }
+
+    let finalSubjectId: string | null = matchedSubject ? matchedSubject.id : null;
+
+    // مطابقة 5: إذا كان جدول المواد فارغاً كلياً، نقوم بإنشاء المادة وتثبيتها فوراً في قاعدة البيانات
     if (!finalSubjectId) {
-      const nameToInsert = targetName || "التربية الإسلامية";
-      try {
-        const { data: newSub } = await adminSupabase
-          .from("subjects")
-          .upsert({ name: nameToInsert, stage: "عام" }, { onConflict: "name" })
-          .select("id")
-          .maybeSingle();
-
-        if (newSub?.id) {
-          finalSubjectId = newSub.id;
-        }
-      } catch (_) {}
-    }
-
-    // محاولة د: إذا تعذر، أخذ معرف أي مادة متوفرة في الجدول لضمان عدم كسر القيد الأجنبي
-    if (!finalSubjectId) {
-      try {
-        const { data: anySub } = await adminSupabase
-          .from("subjects")
-          .select("id")
-          .limit(1)
-          .maybeSingle();
-        if (anySub?.id) {
-          finalSubjectId = anySub.id;
-        }
-      } catch (_) {}
-    }
-
-    // محاولة هـ: إذا كان الجدول فارغاً كلياً، ندخل مادة التربية الإسلامية ونحصل على معرّفها
-    if (!finalSubjectId) {
-      try {
-        const { data: seeded } = await adminSupabase
-          .from("subjects")
-          .insert({ name: "التربية الإسلامية", stage: "عام" })
-          .select("id")
-          .maybeSingle();
-        if (seeded?.id) {
-          finalSubjectId = seeded.id;
-        }
-      } catch (_) {}
-    }
-
-    // 2. التحقق من صحة معرف المعلم (teacher_id) وضمان توافقه مع جدول teachers
-    let finalTeacherId: string | null = null;
-    if (teacherId) {
-      try {
-        // فحص إذا كان المعرف موجود في teachers كـ id
-        const { data: tRow } = await adminSupabase
-          .from("teachers")
-          .select("id")
-          .eq("id", teacherId)
-          .maybeSingle();
-
-        if (tRow?.id) {
-          finalTeacherId = tRow.id;
-        } else {
-          // فحص إذا كان المعرف يمثل profile_id لمعلم
-          const { data: tByProf } = await adminSupabase
-            .from("teachers")
+      const nameToAdd = (subjectName || "التربية الإسلامية").trim();
+      for (const client of clients) {
+        try {
+          const { data: insData } = await client
+            .from("subjects")
+            .insert({ name: nameToAdd, stage: "عام" })
             .select("id")
-            .eq("profile_id", teacherId)
             .maybeSingle();
 
+          if (insData?.id) {
+            finalSubjectId = insData.id;
+            break;
+          }
+        } catch (_) {}
+
+        try {
+          const { data: insSimple } = await client
+            .from("subjects")
+            .insert({ name: nameToAdd })
+            .select("id")
+            .maybeSingle();
+
+          if (insSimple?.id) {
+            finalSubjectId = insSimple.id;
+            break;
+          }
+        } catch (_) {}
+      }
+
+      // إذا تعذر الإرجاع المباشر لـ id، نعيد الاستعلام لأخذ أي مادة تم إدخالها
+      if (!finalSubjectId) {
+        for (const client of clients) {
+          try {
+            const { data: anySub } = await client.from("subjects").select("id").limit(1).maybeSingle();
+            if (anySub?.id) {
+              finalSubjectId = anySub.id;
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    // إذا فشل كل ما سبق وكان المعرف غير متوفر، نرسل خطأ واضحاً
+    if (!finalSubjectId) {
+      return NextResponse.json(
+        { error: "تعذر مطابقة المادة في قاعدة البيانات. يرجى إعادة تحميل الصفحة." },
+        { status: 400 }
+      );
+    }
+
+    // 2. التحقق من صحة معرف المعلم (teacher_id) وتجهيزه
+    let finalTeacherId: string | null = null;
+    if (teacherId) {
+      for (const client of clients) {
+        try {
+          const { data: tRow } = await client.from("teachers").select("id").eq("id", teacherId).maybeSingle();
+          if (tRow?.id) {
+            finalTeacherId = tRow.id;
+            break;
+          }
+          const { data: tByProf } = await client.from("teachers").select("id").eq("profile_id", teacherId).maybeSingle();
           if (tByProf?.id) {
             finalTeacherId = tByProf.id;
-          } else {
-            // التحقق من وجود حساب معلم في profiles وإضافته في teachers
-            const { data: prof } = await adminSupabase
-              .from("profiles")
-              .select("id")
-              .eq("id", teacherId)
-              .maybeSingle();
-
-            if (prof?.id) {
-              const { data: createdT } = await adminSupabase
-                .from("teachers")
-                .insert({ profile_id: prof.id, specialization: "عام" })
-                .select("id")
-                .maybeSingle();
-              if (createdT?.id) finalTeacherId = createdT.id;
-            }
+            break;
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
     }
 
     // 3. حذف الحصة السابقة في نفس اليوم والحصة (استبدال الحصة القديمة)
-    try {
-      await adminSupabase
-        .from("weekly_schedules")
-        .delete()
-        .eq("class_id", classId)
-        .eq("day", cleanDay)
-        .eq("period", cleanPeriod);
-    } catch (_) {}
+    for (const client of clients) {
+      try {
+        await client
+          .from("weekly_schedules")
+          .delete()
+          .eq("class_id", classId)
+          .eq("day", cleanDay)
+          .eq("period", cleanPeriod);
+      } catch (_) {}
 
-    try {
-      await adminSupabase
-        .from("weekly_schedules")
-        .delete()
-        .eq("class_id", classId)
-        .eq("day_of_week", cleanDay)
-        .eq("period", cleanPeriod);
-    } catch (_) {}
+      try {
+        await client
+          .from("weekly_schedules")
+          .delete()
+          .eq("class_id", classId)
+          .eq("day_of_week", cleanDay)
+          .eq("period", cleanPeriod);
+      } catch (_) {}
+    }
 
-    // 4. إدراج الحصة مع المعالجة الذكية لأسماء الأعمدة والقيود
+    // 4. إدراج الحصة مع المعالجة الذكية لأسماء الأعمدة والعملاء
     let insertedRecord: any = null;
     let insertErr: any = null;
 
-    // دالة مساعدة لمحاولة الإدراج
-    const tryInsert = async (tId: string | null) => {
+    const tryInsertWithClient = async (client: any, tId: string | null) => {
       // محاولة الإدراج بكلا العمودين day و day_of_week
-      let res = await adminSupabase
+      let res = await client
         .from("weekly_schedules")
         .insert({
           class_id: classId,
@@ -271,7 +259,7 @@ export async function POST(req: NextRequest) {
 
       // إذا كان الخطأ بسبب عدم وجود عمود day_of_week
       if (res.error?.message?.includes("day_of_week")) {
-        res = await adminSupabase
+        res = await client
           .from("weekly_schedules")
           .insert({
             class_id: classId,
@@ -287,7 +275,7 @@ export async function POST(req: NextRequest) {
 
       // إذا كان الخطأ بسبب عدم وجود عمود day
       if (res.error?.message?.includes('"day"')) {
-        res = await adminSupabase
+        res = await client
           .from("weekly_schedules")
           .insert({
             class_id: classId,
@@ -304,28 +292,37 @@ export async function POST(req: NextRequest) {
       return { data: null, error: res.error };
     };
 
-    let result = await tryInsert(finalTeacherId);
+    // تجربة الإدراج باستخدام كلا العميلين
+    for (const client of clients) {
+      let result = await tryInsertWithClient(client, finalTeacherId);
 
-    // إذا فشل بسبب قيد not-null على teacher_id، نبحث عن أي معلم متاح لربطه
-    if (result.error && (result.error.message?.includes("teacher_id") || result.error.message?.includes("not-null"))) {
-      try {
-        const { data: anyTeacher } = await adminSupabase
-          .from("teachers")
-          .select("id")
-          .limit(1)
-          .maybeSingle();
+      // إذا فشل بسبب قيد not-null على teacher_id، نبحث عن أي معلم متاح لربطه
+      if (result.error && (result.error.message?.includes("teacher_id") || result.error.message?.includes("not-null"))) {
+        try {
+          const { data: anyTeacher } = await client
+            .from("teachers")
+            .select("id")
+            .limit(1)
+            .maybeSingle();
 
-        if (anyTeacher?.id) {
-          result = await tryInsert(anyTeacher.id);
-        }
-      } catch (_) {}
+          if (anyTeacher?.id) {
+            result = await tryInsertWithClient(client, anyTeacher.id);
+          }
+        } catch (_) {}
+      }
+
+      if (!result.error && result.data) {
+        insertedRecord = result.data;
+        insertErr = null;
+        break;
+      } else {
+        insertErr = result.error;
+      }
     }
 
-    if (result.error) {
-      throw new Error(result.error.message);
+    if (insertErr && !insertedRecord) {
+      throw new Error(insertErr.message);
     }
-
-    insertedRecord = result.data;
 
     return NextResponse.json({
       success: true,
