@@ -845,54 +845,88 @@ export function ManagementDashboard({
     setCellModal(true);
   };
 
-  // حفظ تعيين المادة في خلية الجدول
+  // حفظ تعيين المادة في خلية الجدول - حفظ فوري ولحظي مع المعالجة في الخلفية
   const handleSaveCell = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCell || !selectedClassId || !cellSubjectId) return;
-    setCellLoading(true);
+
+    const cellToSave = { ...activeCell };
+    const subIdToSave = cellSubjectId;
+    const teacherIdToSave = cellTeacherId || null;
+    const selectedSub = subjects.find((s) => s.id === subIdToSave);
+    const selectedTeacher = teachers.find((t) => t.id === teacherIdToSave);
+    const currentClass = classes.find((c) => c.id === selectedClassId);
+
+    // 1. التحديث اللحظي الفوري في الواجهة (0 ثانية)
+    const newEntry: ScheduleEntry = {
+      id: cellToSave.existing?.id || `opt-${Date.now()}`,
+      classId: selectedClassId,
+      className: currentClass ? `${currentClass.name} (${currentClass.section})` : "صف",
+      teacherId: teacherIdToSave,
+      teacherName: selectedTeacher?.name || (teacherIdToSave ? "معلم" : "بدون معلم"),
+      subjectId: subIdToSave,
+      subject: selectedSub?.name || "مادة",
+      day: cellToSave.day,
+      period: cellToSave.period,
+    };
+
+    setSchedules((prev) => [
+      ...prev.filter(
+        (s) => !(s.classId === selectedClassId && s.day === cellToSave.day && s.period === cellToSave.period)
+      ),
+      newEntry,
+    ]);
+
+    // إغلاق نافذة الحفظ فوراً بدون أي تأخير
+    setCellModal(false);
+    setActiveCell(null);
+    setCellLoading(false);
     setScheduleError("");
 
+    // 2. إتمام عملية الحفظ في قاعدة البيانات بالخلفية بدون تعطيل المستخدم
     try {
-      const selectedSub = subjects.find((s) => s.id === cellSubjectId);
-      const res = await fetch("/api/admin/schedules", {
+      fetch("/api/admin/schedules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           classId: selectedClassId,
-          day: activeCell.day,
-          dayOfWeek: activeCell.day,
-          period: activeCell.period,
-          subjectId: cellSubjectId,
+          day: cellToSave.day,
+          dayOfWeek: cellToSave.day,
+          period: cellToSave.period,
+          subjectId: subIdToSave,
           subjectName: selectedSub?.name || "",
-          teacherId: cellTeacherId || null,
+          teacherId: teacherIdToSave,
         }),
+      })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          console.error("Schedule background save warning:", data?.error);
+        }
+      })
+      .catch((err) => {
+        console.error("Network error during background schedule save:", err);
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "تعذر حفظ الحصة في الجدول.");
-      }
-
-      await fetchAllData();
-      setCellModal(false);
-      setActiveCell(null);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "حدث خطأ أثناء حفظ الحصة.";
-      setScheduleError(msg);
-    } finally {
-      setCellLoading(false);
+    } catch (err) {
+      console.error("Background schedule error:", err);
     }
   };
 
-  // حذف حصة من خلية الجدول
+  // حذف حصة من خلية الجدول لحظياً وبشكل فوري
   const handleDeleteCell = async (day: number, period: number, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("هل تؤكد تفريغ هذه الحصة من الجدول؟")) return;
+
+    // تفريغ الحصة فورا في الواجهة
+    setSchedules((prev) =>
+      prev.filter((s) => !(s.classId === selectedClassId && s.day === day && s.period === period))
+    );
+
+    // إرسال الحذف في الخلفية
     try {
-      await fetch(`/api/admin/schedules?classId=${selectedClassId}&day=${day}&period=${period}`, {
+      fetch(`/api/admin/schedules?classId=${selectedClassId}&day=${day}&period=${period}`, {
         method: "DELETE",
-      });
-      await fetchAllData();
+      }).catch((err) => console.error("Schedule delete background error:", err));
     } catch (err) {
       console.error(err);
     }
