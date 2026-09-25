@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Users,
   User,
@@ -174,6 +174,15 @@ export function ManagementDashboard({
   const [selectedGradeName, setSelectedGradeName] = useState<string>("");
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentMsg, setStudentMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const studentNameInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (newStudentModal) {
+      setTimeout(() => {
+        studentNameInputRef.current?.focus();
+      }, 100);
+    }
+  }, [newStudentModal]);
 
 
 
@@ -689,14 +698,30 @@ export function ManagementDashboard({
         throw new Error(data.error || "تعذر تسجيل الطالب.");
       }
 
-      setStudentMsg({ type: "success", text: `تم تسجيل الطالب (${data.student.name}) بنجاح!` });
-      setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
-      setSelectedGradeName("");
+      setStudentMsg({
+        type: "success",
+        text: `✓ تم تسجيل الطالب (${data.student.name}) بنجاح! جاهز لإضافة الطالب التالي مباشرة.`,
+      });
+
+      // تفريغ اسم الطالب ورقم ولي الأمر مع إبقاء الصف والشعبة لسرعة الإدخال المتتالي
+      setNewStudentData((prev) => ({
+        ...prev,
+        name: "",
+        parentName: "",
+        parentPhone: "",
+      }));
+
       fetchAllData();
+
+      // إعادة المؤشر فوراً لخانة اسم الطالب
       setTimeout(() => {
-        setNewStudentModal(false);
+        studentNameInputRef.current?.focus();
+      }, 50);
+
+      // إخفاء رسالة النجاح بعد 3.5 ثوانٍ مع بقاء النافذة مفتوحة
+      setTimeout(() => {
         setStudentMsg(null);
-      }, 1500);
+      }, 3500);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "فشل تسجيل الطالب.";
       setStudentMsg({ type: "error", text: msg });
@@ -3026,9 +3051,24 @@ export function ManagementDashboard({
       {/* نافذة تسجيل طالب وولي أمر */}
       {newStudentModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
-            <h3 className="font-bold text-sm text-slate-900 mb-1">تسجيل طالب وولي أمر</h3>
-            <p className="text-xs text-slate-500 mb-4">تسجيل قيد الطالب في النظام وربطه بولي الأمر</p>
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150 relative">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 mb-0.5">تسجيل طالب وولي أمر</h3>
+                <p className="text-[11px] text-slate-500">النافذة تبقى مفتوحة لإضافة عدة طلاب تباعاً</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewStudentModal(false);
+                  setStudentMsg(null);
+                }}
+                className="w-7 h-7 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 grid place-items-center transition"
+                title="إغلاق النافذة"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
             {studentMsg && (
               <div
@@ -3047,6 +3087,7 @@ export function ManagementDashboard({
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">اسم الطالب الرباعي:</label>
                 <input
+                  ref={studentNameInputRef}
                   type="text"
                   required
                   value={newStudentData.name}
@@ -3150,20 +3191,23 @@ export function ManagementDashboard({
               <div className="flex justify-end gap-2 pt-3">
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   disabled={studentLoading}
-                  onClick={() => setNewStudentModal(false)}
-                  className="text-xs h-8"
+                  onClick={() => {
+                    setNewStudentModal(false);
+                    setStudentMsg(null);
+                  }}
+                  className="text-xs h-8 border-slate-300"
                 >
-                  إلغاء
+                  إغلاق النافذة
                 </Button>
                 <Button
                   type="submit"
                   disabled={studentLoading}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5 shadow-sm"
                 >
                   {studentLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{studentLoading ? "جارٍ التسجيل..." : "تأكيد تسجيل الطالب"}</span>
+                  <span>{studentLoading ? "جارٍ الحفظ..." : "حفظ وإضافة التالي ↵"}</span>
                 </Button>
               </div>
             </form>
