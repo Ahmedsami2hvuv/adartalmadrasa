@@ -39,10 +39,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "اسم الصف مطلوب." }, { status: 400 });
     }
 
-    const count = Math.max(1, Math.min(Number(sectionsCount) || 1, ARABIC_ALPHABET_SECTIONS.length));
+    const cleanName = name.trim();
     const cleanStage = stage || "متوسطة";
     const year = academicYear || "2025-2026";
-    const cleanName = name.trim();
+
+    // إذا كان المطلوب إضافة شعبة مفردة لصف قائم
+    if (body.singleSection && body.section) {
+      const cleanSection = body.section.trim();
+      const adminSupabase = createAdminSupabaseClient();
+      const serverSupabase = createServerSupabaseClient();
+      const newClassRow = {
+        name: cleanName,
+        section: cleanSection,
+        stage: cleanStage,
+        academic_year: year,
+      };
+
+      let { data: insData, error: insErr } = await adminSupabase
+        .from("classes")
+        .upsert([newClassRow], { onConflict: "name,section,academic_year" })
+        .select("*");
+
+      if (insErr || !insData) {
+        const fb = await serverSupabase
+          .from("classes")
+          .upsert([newClassRow], { onConflict: "name,section,academic_year" })
+          .select("*");
+        insData = fb.data;
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `تم إضافة شعبة (${cleanSection}) لصف (${cleanName}) بنجاح.`,
+        classes: insData,
+      });
+    }
+
+    const count = Math.max(1, Math.min(Number(sectionsCount) || 1, ARABIC_ALPHABET_SECTIONS.length));
 
     const adminSupabase = createAdminSupabaseClient();
     const serverSupabase = createServerSupabaseClient();

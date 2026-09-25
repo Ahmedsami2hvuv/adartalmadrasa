@@ -184,6 +184,13 @@ export function ManagementDashboard({
     }
   }, [newStudentModal]);
 
+  // إضافة صف وشعبة سريعة من داخل نافذة إضافة طالب
+  const [quickAddClassOpen, setQuickAddClassOpen] = useState(false);
+  const [quickClassName, setQuickClassName] = useState("");
+  const [quickAddSectionOpen, setQuickAddSectionOpen] = useState(false);
+  const [quickSectionName, setQuickSectionName] = useState("");
+  const [quickActionLoading, setQuickActionLoading] = useState(false);
+
 
 
   // إشعار نسخ الرابط المباشر
@@ -646,6 +653,70 @@ export function ManagementDashboard({
       setClassMsg({ type: "error", text: msg });
     } finally {
       setClassLoading(false);
+    }
+  };
+
+  // إضافة صف سريعاً من نافذة تسجيل الطالب
+  const handleQuickAddClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickClassName.trim()) return;
+    setQuickActionLoading(true);
+    try {
+      const res = await fetch("/api/admin/classes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: quickClassName.trim(),
+          stage: "متوسطة",
+          sectionsCount: 1,
+          academicYear: settings.academicYear,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await fetchAllData();
+        const createdName = quickClassName.trim();
+        setSelectedGradeName(createdName);
+        setQuickClassName("");
+        setQuickAddClassOpen(false);
+      } else {
+        alert(data.error || "تعذر إضافة الصف.");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setQuickActionLoading(false);
+    }
+  };
+
+  // إضافة شعبة سريعة للصف المحدد من نافذة تسجيل الطالب
+  const handleQuickAddSection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGradeName || !quickSectionName.trim()) return;
+    setQuickActionLoading(true);
+    try {
+      const res = await fetch("/api/admin/classes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: selectedGradeName,
+          section: quickSectionName.trim(),
+          singleSection: true,
+          academicYear: settings.academicYear,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await fetchAllData();
+        setQuickSectionName("");
+        setQuickAddSectionOpen(false);
+      } else {
+        alert(data.error || "تعذر إضافة الشعبة.");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setQuickActionLoading(false);
     }
   };
 
@@ -3085,27 +3156,41 @@ export function ManagementDashboard({
 
             <form onSubmit={handleAddStudent} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">اسم الطالب الرباعي:</label>
+                <label className="block text-slate-700 font-semibold mb-1">اسم الطالب الثلاثي أو الرباعي:</label>
                 <input
                   ref={studentNameInputRef}
                   type="text"
                   required
                   value={newStudentData.name}
-                  onChange={(e) => setNewStudentData({ ...newStudentData, name: e.target.value })}
-                  placeholder="مثال: علي محمد حسن الكرخي"
-                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800"
+                  onChange={(e) => {
+                    const fullName = e.target.value;
+                    const parts = fullName.trim().split(/\s+/);
+                    const autoParent = parts.length > 1 ? parts.slice(1).join(" ") : "";
+                    setNewStudentData((prev) => ({
+                      ...prev,
+                      name: fullName,
+                      parentName: autoParent || prev.parentName,
+                    }));
+                  }}
+                  placeholder="مثال: مهند علي احمد سامي"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">اسم ولي الأمر:</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-700 font-semibold">اسم ولي الأمر:</label>
+                  <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full font-bold">
+                    يكتب تلقائياً من اسم الطالب ويمكن تعديله
+                  </span>
+                </div>
                 <input
                   type="text"
                   required
                   value={newStudentData.parentName}
                   onChange={(e) => setNewStudentData({ ...newStudentData, parentName: e.target.value })}
-                  placeholder="مثال: محمد حسن الكرخي"
-                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800"
+                  placeholder="مثال: علي احمد سامي"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
                 />
               </div>
 
@@ -3123,41 +3208,137 @@ export function ManagementDashboard({
                 <p className="text-[10px] text-slate-500 mt-1">يقبل كافة الصيغ العربية والإنجليزية ويضبطه للواتساب تلقائياً.</p>
               </div>
 
-              {/* اختيار الصف أولاً */}
+              {/* اختيار الصف الدراسي كأزرار مباشرة وظاهرة */}
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">الصف الدراسي:</label>
-                <select
-                  value={selectedGradeName}
-                  onChange={(e) => {
-                    const grade = e.target.value;
-                    setSelectedGradeName(grade);
-                    const matchedSections = classes.filter((c) => c.name === grade);
-                    if (matchedSections.length === 1) {
-                      setNewStudentData((prev) => ({ ...prev, classId: matchedSections[0].id }));
-                    } else {
-                      setNewStudentData((prev) => ({ ...prev, classId: "" }));
-                    }
-                  }}
-                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white"
-                  required
-                >
-                  <option value="">-- اضغط هنا لاختيار الصف --</option>
-                  {Array.from(new Set(classes.map((c) => c.name))).map((gradeName) => (
-                    <option key={gradeName} value={gradeName}>
-                      {gradeName}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-slate-700 font-semibold">
+                    الصف الدراسي (اضغط لتحديده):
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAddClassOpen((v) => !v)}
+                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>إضافة صف جديد</span>
+                  </button>
+                </div>
+
+                {/* نموذج سريع لإضافة صف جديد */}
+                {quickAddClassOpen && (
+                  <div className="mb-2.5 p-2 bg-indigo-50/70 border border-indigo-200 rounded-lg flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="اسم الصف (مثال: الرابع العلمي)"
+                      value={quickClassName}
+                      onChange={(e) => setQuickClassName(e.target.value)}
+                      className="flex-1 px-2.5 py-1.5 rounded border border-slate-300 bg-white text-xs"
+                    />
+                    <Button
+                      type="button"
+                      disabled={quickActionLoading}
+                      onClick={handleQuickAddClass}
+                      className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3"
+                    >
+                      {quickActionLoading ? "..." : "إضافة"}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => setQuickAddClassOpen(false)}
+                      className="text-xs text-slate-500 hover:text-slate-800 px-1"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                )}
+
+                {/* قائمة الصفوف كأزرار مباشرة ظاهرة */}
+                <div className="flex flex-wrap gap-1.5">
+                  {Array.from(new Set(classes.map((c) => c.name))).map((gradeName) => {
+                    const isSelected = selectedGradeName === gradeName;
+                    return (
+                      <button
+                        key={gradeName}
+                        type="button"
+                        onClick={() => {
+                          setSelectedGradeName(gradeName);
+                          const matchedSections = classes.filter((c) => c.name === gradeName);
+                          if (matchedSections.length === 1) {
+                            setNewStudentData((prev) => ({ ...prev, classId: matchedSections[0].id }));
+                          } else {
+                            const currentClass = classes.find((c) => c.id === newStudentData.classId);
+                            const sameSection = matchedSections.find((s) => s.section === currentClass?.section);
+                            if (sameSection) {
+                              setNewStudentData((prev) => ({ ...prev, classId: sameSection.id }));
+                            } else {
+                              setNewStudentData((prev) => ({ ...prev, classId: matchedSections[0]?.id || "" }));
+                            }
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
+                          isSelected
+                            ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                            : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                        }`}
+                      >
+                        {gradeName}
+                      </button>
+                    );
+                  })}
+                  {classes.length === 0 && (
+                    <span className="text-[11px] text-slate-400">لا توجد صفوف، اضغط "+ إضافة صف جديد" أعلاه</span>
+                  )}
+                </div>
               </div>
 
-              {/* ظهور خيارات الشعبة فور اختيار الصف */}
+              {/* ظهور خيارات الشعبة فور اختيار الصف مع زر إضافة شعبة */}
               {selectedGradeName && (
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg animate-in fade-in duration-200">
-                  <label className="block text-slate-700 font-semibold mb-2">
-                    خيارات شعب صف ({selectedGradeName}):
-                  </label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-slate-700 font-semibold">
+                      شعب صف ({selectedGradeName}):
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setQuickAddSectionOpen((v) => !v)}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>إضافة شعبة</span>
+                    </button>
+                  </div>
+
+                  {/* نموذج سريع لإضافة شعبة */}
+                  {quickAddSectionOpen && (
+                    <div className="mb-2 p-2 bg-white border border-indigo-200 rounded-lg flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="رمز الشعبة (مثال: ج أو د)"
+                        value={quickSectionName}
+                        onChange={(e) => setQuickSectionName(e.target.value)}
+                        className="flex-1 px-2.5 py-1 rounded border border-slate-300 text-xs"
+                        maxLength={4}
+                      />
+                      <Button
+                        type="button"
+                        disabled={quickActionLoading}
+                        onClick={handleQuickAddSection}
+                        className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3"
+                      >
+                        {quickActionLoading ? "..." : "إضافة"}
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickAddSectionOpen(false)}
+                        className="text-xs text-slate-500 hover:text-slate-800 px-1"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  )}
+
                   {classes.filter((c) => c.name === selectedGradeName).length === 0 ? (
-                    <p className="text-[11px] text-amber-600">لا توجد شعب مسجلة لهذا الصف حالياً في النظام.</p>
+                    <p className="text-[11px] text-amber-600">لا توجد شعب مسجلة لهذا الصف، اضغط "+ إضافة شعبة" أعلاه.</p>
                   ) : (
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                       {classes
