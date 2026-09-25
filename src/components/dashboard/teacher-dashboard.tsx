@@ -7,7 +7,6 @@ import {
   Award,
   BookOpen,
   FileCheck,
-  QrCode,
   Plus,
   CheckCircle,
   XCircle,
@@ -21,7 +20,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
 import { LogoutButton } from "@/components/logout-button";
-import { QRScannerModal } from "@/components/qr-scanner";
 import { createClient } from "@/lib/supabase/client";
 
 interface StudentAttendance {
@@ -378,7 +376,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {[
             { id: "schedule", label: "جدولي الأسبوعي", icon: Calendar, count: scheduleList.length },
-            { id: "attendance", label: "تسجيل الحضور (QR)", icon: CheckSquare, count: null },
+            { id: "attendance", label: "تسجيل الحضور والغياب", icon: CheckSquare, count: null },
             { id: "grades", label: "رصد الدرجات", icon: Award, count: null },
             { id: "homeworks", label: "الواجبات المدرسية", icon: FileCheck, count: homeworks.length },
             { id: "behavior", label: "الملاحظات السلوكية", icon: BookOpen, count: null },
@@ -481,7 +479,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
             <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
               {[
                 { id: "schedule", label: "جدولي الأسبوعي", icon: Calendar, count: scheduleList.length },
-                { id: "attendance", label: "تسجيل الحضور (QR)", icon: CheckSquare, count: null },
+                { id: "attendance", label: "تسجيل الحضور والغياب", icon: CheckSquare, count: null },
                 { id: "grades", label: "رصد الدرجات", icon: Award, count: null },
                 { id: "homeworks", label: "الواجبات المدرسية", icon: FileCheck, count: homeworks.length },
                 { id: "behavior", label: "الملاحظات السلوكية", icon: BookOpen, count: null },
@@ -535,7 +533,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-bold text-slate-900">
               {activeTab === "schedule" && "جدول الحصص الأسبوعي للمعلم"}
-              {activeTab === "attendance" && "تسجيل الحضور السريع عبر QR"}
+              {activeTab === "attendance" && "تسجيل ومتابعة حضور وغياب الطلاب"}
               {activeTab === "grades" && "رصد درجات الطلاب والتقييمات"}
               {activeTab === "homeworks" && "إدارة الواجبات والأنشطة البيتية"}
               {activeTab === "behavior" && "سجل الملاحظات السلوكية والتربوية"}
@@ -622,7 +620,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
           </div>
         )}
 
-        {/* الحضور والغياب مع QR */}
+        {/* الحضور والغياب المباشر */}
         {activeTab === "attendance" && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-3.5 rounded-lg border border-slate-200">
@@ -650,13 +648,9 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
                 </select>
               </div>
 
-              <Button
-                onClick={() => setScannerOpen(true)}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8"
-              >
-                <QrCode className="w-3.5 h-3.5 ml-1.5" />
-                مسح باركود الطالب (الكاميرا)
-              </Button>
+              <div className="text-xs text-slate-500 font-medium">
+                انقر على حالة الطالب لتثبيت حضوره فوراً في المنظومة
+              </div>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
@@ -664,7 +658,6 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
                   <tr>
                     <th className="p-3">اسم الطالب</th>
-                    <th className="p-3">رمز الحضور (QR)</th>
                     <th className="p-3">الحالة الحالية</th>
                     <th className="p-3 text-center">تحديث فوري</th>
                   </tr>
@@ -673,7 +666,6 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
                   {attendanceList.map((stu) => (
                     <tr key={stu.studentId} className="hover:bg-slate-50/60">
                       <td className="p-3 font-semibold text-slate-900">{stu.studentName}</td>
-                      <td className="p-3 font-mono text-slate-600">{stu.qrCode}</td>
                       <td className="p-3">
                         {stu.status === "present" && (
                           <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold text-xs">
@@ -717,7 +709,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
                   ))}
                   {attendanceList.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="p-6 text-center text-slate-400">
+                      <td colSpan={3} className="p-6 text-center text-slate-400">
                         لا يوجد طلاب في هذا الصف بعد.
                       </td>
                     </tr>
@@ -893,13 +885,6 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
       </main>
       </div>
 
-      {/* ماسح QR */}
-      {scannerOpen && (
-        <QRScannerModal
-          onScan={handleQRScanned}
-          onClose={() => setScannerOpen(false)}
-        />
-      )}
 
       {/* نافذة إضافة واجب */}
       {newHwModal && (

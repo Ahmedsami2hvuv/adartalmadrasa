@@ -496,7 +496,6 @@ export function ParentDashboard({ currentUserName }: { currentUserName?: string 
                   <div>
                     <span className="text-[11px] font-semibold text-slate-500">{activeChild.className}</span>
                     <h2 className="text-base font-bold text-slate-900 mt-0.5">{activeChild.name}</h2>
-                    <p className="text-xs text-slate-500 mt-1">كود الطالب: {activeChild.qrCode}</p>
                   </div>
 
                   <div className="flex items-center gap-3">

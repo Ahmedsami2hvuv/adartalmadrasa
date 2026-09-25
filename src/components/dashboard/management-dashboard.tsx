@@ -536,7 +536,7 @@ export function ManagementDashboard({
         throw new Error(data.error || "تعذر تسجيل الطالب.");
       }
 
-      setStudentMsg({ type: "success", text: `تم تسجيل الطالب (${data.student.name}) وتوليد كود الـ QR بنجاح!` });
+      setStudentMsg({ type: "success", text: `تم تسجيل الطالب (${data.student.name}) بنجاح!` });
       setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
       setSelectedGradeName("");
       fetchAllData();
@@ -1395,7 +1395,7 @@ export function ManagementDashboard({
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-bold text-slate-900">سجل الطلاب المركزي</h2>
-                <p className="text-xs text-slate-500">بيانات الطلاب، أكواد الـ QR، وأولياء الأمور</p>
+                <p className="text-xs text-slate-500">بيانات الطلاب وتفاصيل أولياء الأمور</p>
               </div>
               <Button
                 onClick={() => {
@@ -1419,7 +1419,6 @@ export function ManagementDashboard({
                     <th className="p-3">الصف والشعبة</th>
                     <th className="p-3">ولي الأمر</th>
                     <th className="p-3">الروابط المباشرة (بدون رمز)</th>
-                    <th className="p-3">رمز الحضور (QR)</th>
                     <th className="p-3">نقل الشعبة</th>
                     <th className="p-3 text-center">التقرير الأكاديمي</th>
                   </tr>
@@ -1507,7 +1506,6 @@ export function ManagementDashboard({
                             </div>
                           </div>
                         </td>
-                        <td className="p-3 font-mono text-slate-700 font-semibold">{student.qrCode}</td>
                         <td className="p-3">
                           <select
                             value={student.classId || ""}
@@ -2209,7 +2207,7 @@ export function ManagementDashboard({
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
             <h3 className="font-bold text-sm text-slate-900 mb-1">تسجيل طالب وولي أمر</h3>
-            <p className="text-xs text-slate-500 mb-4">إنشاء حساب الطالب وكود الـ QR وربطه بولي الأمر</p>
+            <p className="text-xs text-slate-500 mb-4">تسجيل قيد الطالب في النظام وربطه بولي الأمر</p>
 
             {studentMsg && (
               <div
@@ -2604,9 +2602,6 @@ export function ManagementDashboard({
                           <p className="text-[11px] text-slate-500 truncate">
                             ولي الأمر: {stu.parentName} ({stu.parentPhone})
                           </p>
-                          <span className="inline-block mt-1 font-mono text-[9px] bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-600">
-                            {stu.qrCode}
-                          </span>
                         </div>
 
                         <div className="flex flex-col gap-1 shrink-0">
@@ -2722,7 +2717,7 @@ export function ManagementDashboard({
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-slate-900">{viewingStudent.name}</h3>
-                  <span className="text-[11px] text-slate-500 font-mono">الباركود: {viewingStudent.qrCode}</span>
+                  <span className="text-[11px] text-slate-500 font-medium">طالب مسجل</span>
                 </div>
               </div>
               <button

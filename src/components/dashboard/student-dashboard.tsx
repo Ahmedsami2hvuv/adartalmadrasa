@@ -41,7 +41,7 @@ ChartJS.register(
 
 export function StudentDashboard({ currentUserName }: { currentUserName?: string }) {
   const [activeTab, setActiveTab] = useState<
-    "today" | "grades" | "homework" | "points" | "leave" | "qrcode"
+    "today" | "grades" | "homework" | "points" | "leave"
   >("today");
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -295,7 +295,6 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
             { id: "grades", label: "الدرجات والغياب", icon: TrendingUp, count: null },
             { id: "homework", label: "الواجبات المدرسية", icon: FileCheck, count: homeworkList.length },
             { id: "points", label: "نقاطي والترتيب", icon: Award, count: null },
-            { id: "qrcode", label: "بطاقة الحضور QR", icon: QrCode, count: null },
             { id: "leave", label: "طلبات الإجازة", icon: Clock, count: leaveRequests.length },
           ].map((item) => {
             const Icon = item.icon;
@@ -380,7 +379,6 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
                 { id: "grades", label: "الدرجات والغياب", icon: TrendingUp, count: null },
                 { id: "homework", label: "الواجبات المدرسية", icon: FileCheck, count: homeworkList.length },
                 { id: "points", label: "نقاطي والترتيب", icon: Award, count: null },
-                { id: "qrcode", label: "بطاقة الحضور QR", icon: QrCode, count: null },
                 { id: "leave", label: "طلبات الإجازة", icon: Clock, count: leaveRequests.length },
               ].map((item) => {
                 const Icon = item.icon;
@@ -434,7 +432,6 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
               {activeTab === "grades" && "الدرجات ونسبة الحضور والغياب"}
               {activeTab === "homework" && "الواجبات المدرسية المطلوب تسليمها"}
               {activeTab === "points" && "لوحة الشرف والنقاط والسلوك"}
-              {activeTab === "qrcode" && "بطاقة الدوام الرقمية (QR)"}
               {activeTab === "leave" && "تقديم ومتابعة طلبات الإجازة"}
             </h2>
             {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
@@ -581,17 +578,6 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
           </div>
         )}
 
-        {/* كود QR */}
-        {activeTab === "qrcode" && (
-          <div className="bg-white border border-slate-200 rounded-lg p-6 max-w-sm mx-auto text-center">
-            <h3 className="font-bold text-slate-900 text-sm mb-1">رمز الحضور المدرسي (QR)</h3>
-            <p className="text-xs text-slate-500 mb-4">أظهر هذا الرمز للمعلم في بداية الحصة لتسجيل الحضور</p>
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg inline-block mb-3">
-              <QrCode className="w-36 h-36 mx-auto text-slate-900" />
-            </div>
-            <div className="font-mono text-xs text-slate-700 font-semibold">{studentData.qrCode}</div>
-          </div>
-        )}
 
         {/* طلبات الإجازة */}
         {activeTab === "leave" && (
