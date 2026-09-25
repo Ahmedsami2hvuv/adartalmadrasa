@@ -14,6 +14,9 @@ import {
   Clock,
   ClipboardList,
   Loader2,
+  Menu,
+  X,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
@@ -60,6 +63,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
     "schedule" | "attendance" | "grades" | "homeworks" | "behavior" | "lesson_plan"
   >("schedule");
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [currentPeriod, setCurrentPeriod] = useState(1);
@@ -342,89 +346,214 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col selection:bg-slate-800 selection:text-white pb-10" dir="rtl">
-      {/* الرأس */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-15 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row selection:bg-slate-800 selection:text-white" dir="rtl">
+      {/* 1. القائمة الجانبية للشاشات المتوسطة والكبيرة (Sidebar Desktop) */}
+      <aside className="hidden md:flex w-64 flex-col bg-white border-l border-slate-200 sticky top-0 h-screen shrink-0 shadow-2xs z-30">
+        {/* رأس القائمة الجانبية */}
+        <div className="p-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold">
-              <BookOpen className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold shadow-xs">
+              <BookOpen className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-bold text-slate-900">لوحة المعلم</h1>
-                <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                  {currentUserName || "معلم المادة"}
-                </span>
-                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
-              </div>
-              <p className="text-[11px] text-slate-500">تسجيل الحضور والدرجات متصل مباشرة بسوبابيس</p>
+            <div className="min-w-0 flex-1">
+              <h1 className="font-bold text-sm text-slate-900 truncate">لوحة المعلم</h1>
+              <p className="text-[11px] text-slate-500">نظام إدارة التدريس</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {botUsername ? (
-              <a
-                href={`https://t.me/${botUsername}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#229ED9] hover:bg-[#1e8ec3] text-white rounded-md text-xs font-semibold shadow-xs transition"
-                title={`فتح بوت التيليجرام: @${botUsername}`}
-              >
-                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
-                </svg>
-                <span>بوت التيليجرام</span>
-              </a>
-            ) : (
-              <button
-                onClick={() => alert("لم يتم ضبط معرّف يوزر بوت التيليجرام بعد في إعدادات إدارة المدرسة.")}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md text-xs font-semibold transition border border-slate-200"
-                title="بوت التيليجرام"
-              >
-                <svg className="w-3.5 h-3.5 fill-current text-slate-500" viewBox="0 0 24 24">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
-                </svg>
-                <span>بوت التيليجرام</span>
-              </button>
-            )}
-            <InstallPWA variant="badge" />
-            <LogoutButton />
+          <div className="mt-3 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between">
+            <div className="min-w-0 pr-1">
+              <span className="text-[10px] text-slate-500 block">المعلم المسجل:</span>
+              <span className="text-xs font-bold text-slate-900 truncate block">
+                {currentUserName || "معلم المادة"}
+              </span>
+            </div>
+            <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-200 shrink-0">
+              نشط ومصرح
+            </span>
           </div>
         </div>
 
-        {/* التبويبات */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-1 border-t border-slate-100 py-1 scrollbar-none">
+        {/* روابط التنقل الرئيسية في القائمة الجانبية */}
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {[
-            { id: "schedule", label: "جدولي الأسبوعي", icon: Calendar },
-            { id: "attendance", label: "تسجيل الحضور (QR)", icon: CheckSquare },
-            { id: "grades", label: "الدرجات", icon: Award },
-            { id: "homeworks", label: "الواجبات", icon: FileCheck },
-            { id: "behavior", label: "الملاحظات السلوكية", icon: BookOpen },
-            { id: "lesson_plan", label: "الخطة اليومية", icon: ClipboardList },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            { id: "schedule", label: "جدولي الأسبوعي", icon: Calendar, count: scheduleList.length },
+            { id: "attendance", label: "تسجيل الحضور (QR)", icon: CheckSquare, count: null },
+            { id: "grades", label: "رصد الدرجات", icon: Award, count: null },
+            { id: "homeworks", label: "الواجبات المدرسية", icon: FileCheck, count: homeworks.length },
+            { id: "behavior", label: "الملاحظات السلوكية", icon: BookOpen, count: null },
+            { id: "lesson_plan", label: "الخطة اليومية", icon: ClipboardList, count: lessonPlans.length },
+          ].map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
             return (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition whitespace-nowrap ${
+                key={item.id}
+                onClick={() => setActiveTab(item.id as typeof activeTab)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                   isActive
                     ? "bg-slate-900 text-white shadow-xs"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{tab.label}</span>
+                <div className="flex items-center gap-2.5">
+                  <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-500"}`} />
+                  <span>{item.label}</span>
+                </div>
+                {item.count !== null && (
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                      isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {item.count}
+                  </span>
+                )}
               </button>
             );
           })}
-        </div>
-      </header>
+        </nav>
 
-      {/* المحتوى */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 w-full mt-6 flex-1">
+        {/* قسم بوت التيليجرام داخل القائمة الجانبية */}
+        {botUsername && (
+          <div className="p-3 mx-3 mb-2 rounded-xl bg-sky-50 border border-sky-200">
+            <div className="flex items-center gap-2 mb-1.5">
+              <MessageCircle className="w-4 h-4 text-sky-600" />
+              <span className="text-[11px] font-bold text-sky-900">بوت التيليجرام المدرسي</span>
+            </div>
+            <a
+              href={`https://t.me/${botUsername}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-1 w-full py-1.5 bg-[#229ED9] hover:bg-[#1e8ec3] text-white rounded-lg text-[11px] font-bold shadow-2xs transition"
+            >
+              <span>فتح البوت @{botUsername} ↗</span>
+            </a>
+          </div>
+        )}
+
+        {/* أسفل القائمة الجانبية: تثبيت التطبيق وتسجيل الخروج */}
+        <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
+          <InstallPWA variant="badge" className="w-full" />
+          <LogoutButton className="w-full" />
+        </div>
+      </aside>
+
+      {/* 2. شريط علوي للهواتف المحمولة (Mobile Header) */}
+      <div className="md:hidden sticky top-0 z-40 bg-white border-b border-slate-200 px-4 h-14 flex items-center justify-between shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-lg hover:bg-slate-100 text-slate-700"
+            title="فتح القائمة الجانبية"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="font-bold text-xs text-slate-900">لوحة المعلم</span>
+        </div>
+        <span className="text-[10px] px-2.5 py-1 rounded-md font-bold bg-slate-100 text-slate-800 border border-slate-200 truncate max-w-[140px]">
+          {currentUserName || "معلم المادة"}
+        </span>
+      </div>
+
+      {/* Drawer القائمة الجانبية للهواتف المحمولة */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div
+            className="fixed inset-0 bg-black/50 transition-opacity"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="relative w-64 max-w-[80vw] bg-white h-full flex flex-col z-10 shadow-2xl animate-in slide-in-from-right duration-200">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-slate-900" />
+                <span className="font-bold text-xs text-slate-900">قائمة المعلم</span>
+              </div>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+              {[
+                { id: "schedule", label: "جدولي الأسبوعي", icon: Calendar, count: scheduleList.length },
+                { id: "attendance", label: "تسجيل الحضور (QR)", icon: CheckSquare, count: null },
+                { id: "grades", label: "رصد الدرجات", icon: Award, count: null },
+                { id: "homeworks", label: "الواجبات المدرسية", icon: FileCheck, count: homeworks.length },
+                { id: "behavior", label: "الملاحظات السلوكية", icon: BookOpen, count: null },
+                { id: "lesson_plan", label: "الخطة اليومية", icon: ClipboardList, count: lessonPlans.length },
+              ].map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id as typeof activeTab);
+                      setSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
+                      isActive
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-500"}`} />
+                      <span>{item.label}</span>
+                    </div>
+                    {item.count !== null && (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                          isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {item.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
+              <InstallPWA variant="badge" className="w-full" />
+              <LogoutButton className="w-full" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. منطقة المحتوى الرئيسي */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* رأس ديسكتوب علوي أنيق */}
+        <div className="hidden md:flex items-center justify-between px-8 py-3.5 bg-white border-b border-slate-200 sticky top-0 z-20 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold text-slate-900">
+              {activeTab === "schedule" && "جدول الحصص الأسبوعي للمعلم"}
+              {activeTab === "attendance" && "تسجيل الحضور السريع عبر QR"}
+              {activeTab === "grades" && "رصد درجات الطلاب والتقييمات"}
+              {activeTab === "homeworks" && "إدارة الواجبات والأنشطة البيتية"}
+              {activeTab === "behavior" && "سجل الملاحظات السلوكية والتربوية"}
+              {activeTab === "lesson_plan" && "دفتر التحضير والخطة اليومية"}
+            </h2>
+            {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">مرحباً بك،</span>
+            <span className="text-xs font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+              {currentUserName || "معلم المادة"}
+            </span>
+          </div>
+        </div>
+
+        {/* المحتوى */}
+        <main className="p-4 md:p-6 max-w-7xl w-full mx-auto space-y-6 flex-1">
         {/* بطاقة بوت التيليجرام للمعلم */}
         <div className="bg-gradient-to-r from-sky-600 to-blue-700 text-white rounded-xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-3">
@@ -762,6 +891,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
           </div>
         )}
       </main>
+      </div>
 
       {/* ماسح QR */}
       {scannerOpen && (

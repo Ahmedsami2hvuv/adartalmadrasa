@@ -11,6 +11,8 @@ import {
   Clock,
   School,
   Loader2,
+  Menu,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
@@ -42,6 +44,7 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
     "today" | "grades" | "homework" | "points" | "leave" | "qrcode"
   >("today");
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [studentId, setStudentId] = useState<string>("");
   const [studentData, setStudentData] = useState({
@@ -257,64 +260,196 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col selection:bg-slate-800 selection:text-white pb-10" dir="rtl">
-      {/* الرأس */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-15 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row selection:bg-slate-800 selection:text-white" dir="rtl">
+      {/* 1. القائمة الجانبية للشاشات الكبيرة (Sidebar Desktop) */}
+      <aside className="hidden md:flex w-64 flex-col bg-white border-l border-slate-200 sticky top-0 h-screen shrink-0 shadow-2xs z-30">
+        {/* رأس القائمة الجانبية */}
+        <div className="p-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold">
-              <School className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold shadow-xs">
+              <School className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-bold text-slate-900">بوابة الطالب</h1>
-                <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                  {studentData.name}
-                </span>
-                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
-              </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="font-bold text-sm text-slate-900 truncate">بوابة الطالب</h1>
               <p className="text-[11px] text-slate-500">{studentData.className}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <InstallPWA variant="badge" />
-            <LogoutButton />
+          <div className="mt-3 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between">
+            <div className="min-w-0 pr-1">
+              <span className="text-[10px] text-slate-500 block">الطالب:</span>
+              <span className="text-xs font-bold text-slate-900 truncate block">
+                {studentData.name}
+              </span>
+            </div>
+            <span className="text-[10px] font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 shrink-0">
+              {studentData.points} نقطة
+            </span>
           </div>
         </div>
 
-        {/* التبويبات */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-1 border-t border-slate-100 py-1 scrollbar-none">
+        {/* روابط التنقل الرئيسية في القائمة الجانبية */}
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {[
-            { id: "today", label: "جدولي اليوم", icon: Calendar },
-            { id: "grades", label: "الدرجات والغياب", icon: TrendingUp },
-            { id: "homework", label: `الواجبات (${homeworkList.length})`, icon: FileCheck },
-            { id: "points", label: "نقاطي والترتيب", icon: Award },
-            { id: "qrcode", label: "بطاقة الحضور QR", icon: QrCode },
-            { id: "leave", label: "طلبات الإجازة", icon: Clock },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            { id: "today", label: "جدولي اليوم", icon: Calendar, count: todaySchedule.length },
+            { id: "grades", label: "الدرجات والغياب", icon: TrendingUp, count: null },
+            { id: "homework", label: "الواجبات المدرسية", icon: FileCheck, count: homeworkList.length },
+            { id: "points", label: "نقاطي والترتيب", icon: Award, count: null },
+            { id: "qrcode", label: "بطاقة الحضور QR", icon: QrCode, count: null },
+            { id: "leave", label: "طلبات الإجازة", icon: Clock, count: leaveRequests.length },
+          ].map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
             return (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition whitespace-nowrap ${
+                key={item.id}
+                onClick={() => setActiveTab(item.id as typeof activeTab)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                   isActive
                     ? "bg-slate-900 text-white shadow-xs"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{tab.label}</span>
+                <div className="flex items-center gap-2.5">
+                  <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-500"}`} />
+                  <span>{item.label}</span>
+                </div>
+                {item.count !== null && item.count > 0 && (
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                      isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {item.count}
+                  </span>
+                )}
               </button>
             );
           })}
-        </div>
-      </header>
+        </nav>
 
-      {/* المحتوى */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 w-full mt-6 flex-1">
+        {/* أسفل القائمة الجانبية: تثبيت التطبيق وتسجيل الخروج */}
+        <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
+          <InstallPWA variant="badge" className="w-full" />
+          <LogoutButton className="w-full" />
+        </div>
+      </aside>
+
+      {/* 2. شريط علوي للهواتف المحمولة (Mobile Header) */}
+      <div className="md:hidden sticky top-0 z-40 bg-white border-b border-slate-200 px-4 h-14 flex items-center justify-between shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-lg hover:bg-slate-100 text-slate-700"
+            title="فتح القائمة الجانبية"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="font-bold text-xs text-slate-900">بوابة الطالب</span>
+        </div>
+        <span className="text-[10px] px-2.5 py-1 rounded-md font-bold bg-slate-100 text-slate-800 border border-slate-200 truncate max-w-[140px]">
+          {studentData.name}
+        </span>
+      </div>
+
+      {/* Drawer القائمة الجانبية للهواتف المحمولة */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div
+            className="fixed inset-0 bg-black/50 transition-opacity"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="relative w-64 max-w-[80vw] bg-white h-full flex flex-col z-10 shadow-2xl animate-in slide-in-from-right duration-200">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <School className="w-5 h-5 text-slate-900" />
+                <span className="font-bold text-xs text-slate-900">قائمة الطالب</span>
+              </div>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+              {[
+                { id: "today", label: "جدولي اليوم", icon: Calendar, count: todaySchedule.length },
+                { id: "grades", label: "الدرجات والغياب", icon: TrendingUp, count: null },
+                { id: "homework", label: "الواجبات المدرسية", icon: FileCheck, count: homeworkList.length },
+                { id: "points", label: "نقاطي والترتيب", icon: Award, count: null },
+                { id: "qrcode", label: "بطاقة الحضور QR", icon: QrCode, count: null },
+                { id: "leave", label: "طلبات الإجازة", icon: Clock, count: leaveRequests.length },
+              ].map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id as typeof activeTab);
+                      setSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
+                      isActive
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-500"}`} />
+                      <span>{item.label}</span>
+                    </div>
+                    {item.count !== null && item.count > 0 && (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                          isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {item.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
+              <InstallPWA variant="badge" className="w-full" />
+              <LogoutButton className="w-full" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. منطقة المحتوى الرئيسي */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* رأس ديسكتوب علوي أنيق */}
+        <div className="hidden md:flex items-center justify-between px-8 py-3.5 bg-white border-b border-slate-200 sticky top-0 z-20 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold text-slate-900">
+              {activeTab === "today" && "جدول حصص اليوم المقررة"}
+              {activeTab === "grades" && "الدرجات ونسبة الحضور والغياب"}
+              {activeTab === "homework" && "الواجبات المدرسية المطلوب تسليمها"}
+              {activeTab === "points" && "لوحة الشرف والنقاط والسلوك"}
+              {activeTab === "qrcode" && "بطاقة الدوام الرقمية (QR)"}
+              {activeTab === "leave" && "تقديم ومتابعة طلبات الإجازة"}
+            </h2>
+            {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">أهلاً بك،</span>
+            <span className="text-xs font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+              {studentData.name} ({studentData.className})
+            </span>
+          </div>
+        </div>
+
+        {/* المحتوى */}
+        <main className="p-4 md:p-6 max-w-7xl w-full mx-auto space-y-5 flex-1">
         {/* اليوم */}
         {activeTab === "today" && (
           <div className="space-y-4">
@@ -486,6 +621,7 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
           </div>
         )}
       </main>
+      </div>
 
       {/* نافذة تسليم حل الواجب */}
       {activeSolutionModal && (

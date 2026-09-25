@@ -11,6 +11,9 @@ import {
   Loader2,
   Award,
   BookOpen,
+  Menu,
+  X,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
@@ -47,6 +50,7 @@ interface Appointment {
 export function ParentDashboard({ currentUserName }: { currentUserName?: string }) {
   const [activeTab, setActiveTab] = useState<"children" | "appointments">("children");
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [parentId, setParentId] = useState<string>("");
   const [children, setChildren] = useState<Child[]>([]);
@@ -228,60 +232,240 @@ export function ParentDashboard({ currentUserName }: { currentUserName?: string 
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col selection:bg-slate-800 selection:text-white pb-10" dir="rtl">
-      {/* الرأس */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-15 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row selection:bg-slate-800 selection:text-white" dir="rtl">
+      {/* 1. القائمة الجانبية للشاشات الكبيرة (Sidebar Desktop) */}
+      <aside className="hidden md:flex w-64 flex-col bg-white border-l border-slate-200 sticky top-0 h-screen shrink-0 shadow-2xs z-30">
+        {/* رأس القائمة الجانبية */}
+        <div className="p-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold">
-              <School className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold shadow-xs">
+              <Users className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-bold text-slate-900">بوابة ولي الأمر</h1>
-                <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                  {currentUserName || "ولي الأمر"}
-                </span>
-                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
-              </div>
-              <p className="text-[11px] text-slate-500">متابعة الأبناء الأكاديمية واليومية مع المدرسة</p>
+            <div className="min-w-0 flex-1">
+              <h1 className="font-bold text-sm text-slate-900 truncate">بوابة ولي الأمر</h1>
+              <p className="text-[11px] text-slate-500">متابعة شؤون الأبناء</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <InstallPWA variant="badge" />
-            <LogoutButton />
+          <div className="mt-3 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between">
+            <div className="min-w-0 pr-1">
+              <span className="text-[10px] text-slate-500 block">ولي الأمر:</span>
+              <span className="text-xs font-bold text-slate-900 truncate block">
+                {currentUserName || "ولي الأمر"}
+              </span>
+            </div>
+            <span className="text-[9px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold border border-blue-200 shrink-0">
+              {children.length} أبناء
+            </span>
           </div>
         </div>
 
-        {/* التبويبات (بدون أقساط) */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-1 border-t border-slate-100 py-1 scrollbar-none">
+        {/* روابط التنقل الرئيسية في القائمة الجانبية */}
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {[
-            { id: "children", label: `الأبناء (${children.length})`, icon: Users },
-            { id: "appointments", label: "طلب موعد مقابلة", icon: Calendar },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            { id: "children", label: "متابعة الأبناء الأكاديمية", icon: Users, count: children.length },
+            { id: "appointments", label: "طلب موعد مقابلة", icon: Calendar, count: appointments.length },
+          ].map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
             return (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition whitespace-nowrap ${
+                key={item.id}
+                onClick={() => setActiveTab(item.id as typeof activeTab)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                   isActive
                     ? "bg-slate-900 text-white shadow-xs"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{tab.label}</span>
+                <div className="flex items-center gap-2.5">
+                  <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-500"}`} />
+                  <span>{item.label}</span>
+                </div>
+                {item.count !== null && item.count > 0 && (
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                      isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {item.count}
+                  </span>
+                )}
               </button>
             );
           })}
-        </div>
-      </header>
 
-      {/* المحتوى */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 w-full mt-6 flex-1">
+          {/* تبديل سريع للأبناء من القائمة الجانبية إذا كان هناك أكثر من ابن */}
+          {children.length > 1 && (
+            <div className="pt-3 mt-3 border-t border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 px-2 block mb-1.5 uppercase">
+                اختر الابن للمتابعة:
+              </span>
+              <div className="space-y-1">
+                {children.map((child, idx) => (
+                  <button
+                    key={child.id}
+                    onClick={() => {
+                      setSelectedChildIndex(idx);
+                      setActiveTab("children");
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition ${
+                      selectedChildIndex === idx && activeTab === "children"
+                        ? "bg-slate-100 text-slate-900 font-bold border border-slate-300"
+                        : "text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="truncate">{child.name}</span>
+                    <span className="text-[10px] text-slate-400 shrink-0">{child.className}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </nav>
+
+        {/* أسفل القائمة الجانبية: تثبيت التطبيق وتسجيل الخروج */}
+        <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
+          <InstallPWA variant="badge" className="w-full" />
+          <LogoutButton className="w-full" />
+        </div>
+      </aside>
+
+      {/* 2. شريط علوي للهواتف المحمولة (Mobile Header) */}
+      <div className="md:hidden sticky top-0 z-40 bg-white border-b border-slate-200 px-4 h-14 flex items-center justify-between shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-lg hover:bg-slate-100 text-slate-700"
+            title="فتح القائمة الجانبية"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="font-bold text-xs text-slate-900">بوابة ولي الأمر</span>
+        </div>
+        <span className="text-[10px] px-2.5 py-1 rounded-md font-bold bg-slate-100 text-slate-800 border border-slate-200 truncate max-w-[140px]">
+          {currentUserName || "ولي الأمر"}
+        </span>
+      </div>
+
+      {/* Drawer القائمة الجانبية للهواتف المحمولة */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div
+            className="fixed inset-0 bg-black/50 transition-opacity"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="relative w-64 max-w-[80vw] bg-white h-full flex flex-col z-10 shadow-2xl animate-in slide-in-from-right duration-200">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-slate-900" />
+                <span className="font-bold text-xs text-slate-900">قائمة ولي الأمر</span>
+              </div>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+              {[
+                { id: "children", label: "متابعة الأبناء الأكاديمية", icon: Users, count: children.length },
+                { id: "appointments", label: "طلب موعد مقابلة", icon: Calendar, count: appointments.length },
+              ].map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id as typeof activeTab);
+                      setSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
+                      isActive
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-500"}`} />
+                      <span>{item.label}</span>
+                    </div>
+                    {item.count !== null && item.count > 0 && (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                          isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {item.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {children.length > 1 && (
+                <div className="pt-3 mt-3 border-t border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 px-2 block mb-1.5 uppercase">
+                    اختر الابن:
+                  </span>
+                  <div className="space-y-1">
+                    {children.map((child, idx) => (
+                      <button
+                        key={child.id}
+                        onClick={() => {
+                          setSelectedChildIndex(idx);
+                          setActiveTab("children");
+                          setSidebarOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition ${
+                          selectedChildIndex === idx && activeTab === "children"
+                            ? "bg-slate-100 text-slate-900 font-bold border border-slate-300"
+                            : "text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <span className="truncate">{child.name}</span>
+                        <span className="text-[10px] text-slate-400 shrink-0">{child.className}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </nav>
+
+            <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
+              <InstallPWA variant="badge" className="w-full" />
+              <LogoutButton className="w-full" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. منطقة المحتوى الرئيسي */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* رأس ديسكتوب علوي أنيق */}
+        <div className="hidden md:flex items-center justify-between px-8 py-3.5 bg-white border-b border-slate-200 sticky top-0 z-20 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold text-slate-900">
+              {activeTab === "children" && "متابعة السجل الأكاديمي واليومي للأبناء"}
+              {activeTab === "appointments" && "حجز ومتابعة المواعيد مع إدارة المدرسة"}
+            </h2>
+            {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">مرحباً بك،</span>
+            <span className="text-xs font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+              {currentUserName || "ولي الأمر"}
+            </span>
+          </div>
+        </div>
+
+        {/* المحتوى */}
+        <main className="p-4 md:p-6 max-w-7xl w-full mx-auto space-y-5 flex-1">
         {/* متابعة الأبناء */}
         {activeTab === "children" && (
           <div className="space-y-6">
@@ -440,6 +624,7 @@ export function ParentDashboard({ currentUserName }: { currentUserName?: string 
           </div>
         )}
       </main>
+      </div>
 
       {/* نافذة حجز موعد */}
       {appointmentModal && (
