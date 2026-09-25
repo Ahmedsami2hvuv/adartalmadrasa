@@ -706,6 +706,7 @@ export function ManagementDashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           classId: selectedClassId,
+          day: activeCell.day,
           dayOfWeek: activeCell.day,
           period: activeCell.period,
           subjectId: cellSubjectId,

@@ -8,10 +8,10 @@ export async function GET(req: NextRequest) {
 
     const adminSupabase = createAdminSupabaseClient();
     
-    // محاولة 1: الاستعلام مع day_of_week
+    // محاولة 1: الاستعلام مع عمود day (العمود الأساسي في قاعدة البيانات)
     let query = adminSupabase.from("weekly_schedules").select(`
       id,
-      day_of_week,
+      day,
       period,
       class_id,
       teacher_id,
@@ -27,11 +27,19 @@ export async function GET(req: NextRequest) {
 
     let { data: schedules, error } = await query;
 
-    // محاولة 2: إذا فشل بسبب عمود day_of_week، نستعلم بـ day
-    if (error && error.message?.includes("day_of_week")) {
-      let queryDay = adminSupabase.from("weekly_schedules").select(`
+    if (!error && schedules) {
+      schedules = schedules.map((r: any) => ({
+        ...r,
+        day: r.day,
+        day_of_week: r.day,
+      }));
+    }
+
+    // محاولة 2: إذا فشل بسبب عدم وجود عمود day، نستعلم بـ day_of_week
+    if (error) {
+      let queryDayOfWeek = adminSupabase.from("weekly_schedules").select(`
         id,
-        day,
+        day_of_week,
         period,
         class_id,
         teacher_id,
@@ -42,14 +50,15 @@ export async function GET(req: NextRequest) {
       `);
 
       if (classId) {
-        queryDay = queryDay.eq("class_id", classId);
+        queryDayOfWeek = queryDayOfWeek.eq("class_id", classId);
       }
 
-      const resDay = await queryDay;
-      if (!resDay.error && resDay.data) {
-        schedules = resDay.data.map((r: any) => ({
+      const resDayOfWeek = await queryDayOfWeek;
+      if (!resDayOfWeek.error && resDayOfWeek.data) {
+        schedules = resDayOfWeek.data.map((r: any) => ({
           ...r,
-          day_of_week: r.day,
+          day: r.day_of_week,
+          day_of_week: r.day_of_week,
         }));
         error = null;
       }
@@ -68,9 +77,15 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { classId, dayOfWeek, period, subjectId, teacherId, subjectName } = await req.json();
+    const body = await req.json();
+    const classId = body.classId;
+    const dayValue = body.day ?? body.dayOfWeek;
+    const period = body.period;
+    const subjectId = body.subjectId;
+    const teacherId = body.teacherId;
+    const subjectName = body.subjectName;
 
-    if (!classId || !dayOfWeek || !period || !subjectId) {
+    if (!classId || dayValue === undefined || dayValue === null || !period || !subjectId) {
       return NextResponse.json(
         { error: "يرجى تحديد الصف، اليوم، الحصة، والمادة." },
         { status: 400 }
@@ -78,7 +93,7 @@ export async function POST(req: NextRequest) {
     }
 
     const adminSupabase = createAdminSupabaseClient();
-    const cleanDay = Number(dayOfWeek);
+    const cleanDay = Number(dayValue);
     const cleanPeriod = Number(period);
 
     // التحقق من أن معرف المادة UUID صالح، وإذا لم يكن كذلك يتم جلبه أو إنشاؤه في جدول subjects
@@ -128,31 +143,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 1. حذف الحصة السابقة في نفس اليوم والحصة (استبدال الحصة)
-    const { error: delErr } = await adminSupabase
-      .from("weekly_schedules")
-      .delete()
-      .eq("class_id", classId)
-      .eq("day_of_week", cleanDay)
-      .eq("period", cleanPeriod);
-
-    if (delErr && delErr.message?.includes("day_of_week")) {
+    // 1. حذف الحصة السابقة في نفس اليوم والحصة (استبدال الحصة القديمة)
+    try {
       await adminSupabase
         .from("weekly_schedules")
         .delete()
         .eq("class_id", classId)
         .eq("day", cleanDay)
         .eq("period", cleanPeriod);
-    }
+    } catch (_) {}
 
-    // 2. محاولة الإدراج باستخدام day_of_week
+    try {
+      await adminSupabase
+        .from("weekly_schedules")
+        .delete()
+        .eq("class_id", classId)
+        .eq("day_of_week", cleanDay)
+        .eq("period", cleanPeriod);
+    } catch (_) {}
+
+    // 2. إدراج الحصة الجديدة مع مراعاة اسم العمود في قاعدة البيانات (day أو day_of_week)
     let insertedRecord: any = null;
     let insertErr: any = null;
 
-    const res1 = await adminSupabase
+    // محاولة الإدراج الأولى: تمرير day و day_of_week معاً
+    const resBoth = await adminSupabase
       .from("weekly_schedules")
       .insert({
         class_id: classId,
+        day: cleanDay,
         day_of_week: cleanDay,
         period: cleanPeriod,
         subject_id: finalSubjectId,
@@ -161,29 +180,51 @@ export async function POST(req: NextRequest) {
       .select("*")
       .maybeSingle();
 
-    if (!res1.error && res1.data) {
-      insertedRecord = res1.data;
-    } else if (res1.error && res1.error.message?.includes("day_of_week")) {
-      // محاولة الإدراج باستخدام عمود day البديل
-      const res2 = await adminSupabase
-        .from("weekly_schedules")
-        .insert({
-          class_id: classId,
-          day: cleanDay,
-          period: cleanPeriod,
-          subject_id: subjectId,
-          teacher_id: teacherId || null,
-        })
-        .select("*")
-        .maybeSingle();
-
-      if (!res2.error && res2.data) {
-        insertedRecord = res2.data;
-      } else {
-        insertErr = res2.error;
-      }
+    if (!resBoth.error && resBoth.data) {
+      insertedRecord = resBoth.data;
     } else {
-      insertErr = res1.error;
+      // إذا فشل بسبب أن day_of_week غير موجود في الجدول، ندرج بـ day فقط
+      if (resBoth.error?.message?.includes("day_of_week")) {
+        const resOnlyDay = await adminSupabase
+          .from("weekly_schedules")
+          .insert({
+            class_id: classId,
+            day: cleanDay,
+            period: cleanPeriod,
+            subject_id: finalSubjectId,
+            teacher_id: teacherId || null,
+          })
+          .select("*")
+          .maybeSingle();
+
+        if (!resOnlyDay.error && resOnlyDay.data) {
+          insertedRecord = resOnlyDay.data;
+        } else {
+          insertErr = resOnlyDay.error;
+        }
+      } 
+      // إذا فشل بسبب أن day غير موجود، ندرج بـ day_of_week فقط
+      else if (resBoth.error?.message?.includes('"day"')) {
+        const resOnlyDayOfWeek = await adminSupabase
+          .from("weekly_schedules")
+          .insert({
+            class_id: classId,
+            day_of_week: cleanDay,
+            period: cleanPeriod,
+            subject_id: finalSubjectId,
+            teacher_id: teacherId || null,
+          })
+          .select("*")
+          .maybeSingle();
+
+        if (!resOnlyDayOfWeek.error && resOnlyDayOfWeek.data) {
+          insertedRecord = resOnlyDayOfWeek.data;
+        } else {
+          insertErr = resOnlyDayOfWeek.error;
+        }
+      } else {
+        insertErr = resBoth.error;
+      }
     }
 
     if (insertErr) {
@@ -194,7 +235,8 @@ export async function POST(req: NextRequest) {
       success: true,
       schedule: {
         ...insertedRecord,
-        day_of_week: insertedRecord.day_of_week ?? insertedRecord.day ?? cleanDay,
+        day: insertedRecord?.day ?? insertedRecord?.day_of_week ?? cleanDay,
+        day_of_week: insertedRecord?.day_of_week ?? insertedRecord?.day ?? cleanDay,
       },
     });
   } catch (err: unknown) {
@@ -208,7 +250,7 @@ export async function DELETE(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     const classId = searchParams.get("classId");
-    const day = searchParams.get("day");
+    const day = searchParams.get("day") || searchParams.get("dayOfWeek");
     const period = searchParams.get("period");
 
     const adminSupabase = createAdminSupabaseClient();
@@ -219,21 +261,23 @@ export async function DELETE(req: NextRequest) {
       const cleanDay = Number(day);
       const cleanPeriod = Number(period);
 
-      const { error: dErr } = await adminSupabase
-        .from("weekly_schedules")
-        .delete()
-        .eq("class_id", classId)
-        .eq("day_of_week", cleanDay)
-        .eq("period", cleanPeriod);
-
-      if (dErr && dErr.message?.includes("day_of_week")) {
+      try {
         await adminSupabase
           .from("weekly_schedules")
           .delete()
           .eq("class_id", classId)
           .eq("day", cleanDay)
           .eq("period", cleanPeriod);
-      }
+      } catch (_) {}
+
+      try {
+        await adminSupabase
+          .from("weekly_schedules")
+          .delete()
+          .eq("class_id", classId)
+          .eq("day_of_week", cleanDay)
+          .eq("period", cleanPeriod);
+      } catch (_) {}
     }
 
     return NextResponse.json({ success: true });
