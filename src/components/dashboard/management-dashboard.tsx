@@ -2398,7 +2398,7 @@ export function ManagementDashboard({
                   <option value="">بدون معلم محدد حالياً</option>
                   {teachers.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({t.subject})
+                      الأستاذ {t.name} ({t.subject})
                     </option>
                   ))}
                 </select>
