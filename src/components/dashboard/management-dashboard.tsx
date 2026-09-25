@@ -23,6 +23,8 @@ import {
   ExternalLink,
   Link as LinkIcon,
   ArrowRightLeft,
+  ArrowRight,
+  ChevronLeft,
   Edit3,
   Menu,
   X,
@@ -186,6 +188,9 @@ export function ManagementDashboard({
   const [cellTeacherId, setCellTeacherId] = useState("");
   const [cellLoading, setCellLoading] = useState(false);
   const [scheduleError, setScheduleError] = useState("");
+
+  // عرض تفاصيل صف دراسي محدد عند النقر عليه
+  const [selectedGradeForView, setSelectedGradeForView] = useState<string | null>(null);
 
   // جلب كافة البيانات الفعلية من سوبابيس ومسارات السيرفر
   const fetchAllData = useCallback(async () => {
@@ -846,7 +851,10 @@ export function ManagementDashboard({
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id as typeof activeTab)}
+                onClick={() => {
+                  setActiveTab(item.id as typeof activeTab);
+                  if (item.id === "classes") setSelectedGradeForView(null);
+                }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                   isActive
                     ? "bg-slate-900 text-white shadow-xs"
@@ -933,6 +941,7 @@ export function ManagementDashboard({
                     key={item.id}
                     onClick={() => {
                       setActiveTab(item.id as typeof activeTab);
+                      if (item.id === "classes") setSelectedGradeForView(null);
                       setSidebarOpen(false);
                     }}
                     className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
@@ -1256,135 +1265,218 @@ export function ManagementDashboard({
         {/* الصفوف والشعب */}
         {activeTab === "classes" && (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200">
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">هيكل الصفوف الدراسية والشعب</h2>
-                <p className="text-xs text-slate-500">
-                  إجمالي {groupedClasses.length} صف دراسي يحتوي على {classes.length} شعبة موزعة بالتسلسل الأبجدي.
-                </p>
-              </div>
-              <Button
-                onClick={() => {
-                  setClassMsg(null);
-                  setNewClassModal(true);
-                }}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5 ml-1.5" />
-                إضافة صف وشعب جديدة
-              </Button>
-            </div>
+            {!selectedGradeForView ? (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200">
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900">هيكل الصفوف الدراسية</h2>
+                    <p className="text-xs text-slate-500">
+                      إجمالي {groupedClasses.length} صف دراسي • انقر على أي صف لعرض شُعبه وإدارتها
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      setClassMsg(null);
+                      setNewClassModal(true);
+                    }}
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5 ml-1.5" />
+                    إضافة صف وشعب جديدة
+                  </Button>
+                </div>
 
-            {groupedClasses.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
-                <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                <h3 className="font-bold text-slate-700 text-sm mb-1">لا توجد صفوف دراسية مسجلة بعد</h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
-                  اضغط على زر &quot;إضافة صف وشعب جديدة&quot; وأدخل اسم الصف وعدد شعبه ليقوم النظام بإنشائها آلياً.
-                </p>
-                <Button
-                  onClick={() => {
-                    setClassMsg(null);
-                    setNewClassModal(true);
-                  }}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8"
-                >
-                  <Plus className="w-3.5 h-3.5 ml-1.5" />
-                  إضافة صف دراسي الآن
-                </Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {groupedClasses.map((group) => {
-                  const totalStudentsInClass = group.sections.reduce(
-                    (acc, sec) => acc + students.filter((s) => s.classId === sec.id).length,
-                    0
-                  );
-
-                  return (
-                    <div
-                      key={group.name}
-                      className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:shadow-xs transition-shadow flex flex-col justify-between"
+                {groupedClasses.length === 0 ? (
+                  <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                    <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                    <h3 className="font-bold text-slate-700 text-sm mb-1">لا توجد صفوف دراسية مسجلة بعد</h3>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
+                      اضغط على زر &quot;إضافة صف وشعب جديدة&quot; وأدخل اسم الصف وعدد شعبه ليقوم النظام بإنشائها آلياً.
+                    </p>
+                    <Button
+                      onClick={() => {
+                        setClassMsg(null);
+                        setNewClassModal(true);
+                      }}
+                      className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8"
                     >
-                      <div>
-                        {/* ترويسة الصف - قابلة للنقر لفتح خيارات التعديل والمسح */}
+                      <Plus className="w-3.5 h-3.5 ml-1.5" />
+                      إضافة صف دراسي الآن
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {groupedClasses.map((group) => {
+                      const totalStudentsInClass = group.sections.reduce(
+                        (acc, sec) => acc + students.filter((s) => s.classId === sec.id).length,
+                        0
+                      );
+
+                      return (
                         <div
-                          onClick={() => {
-                            setSelectedGroupForEdit(group);
-                            setEditClassName(group.name);
-                            setEditClassStage(group.stage);
-                            setEditClassModal(true);
-                          }}
-                          className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3 cursor-pointer group hover:bg-slate-50/80 p-1.5 -mx-1.5 rounded-lg transition"
-                          title="انقر لتعديل اسم الصف أو حذفه"
+                          key={group.name}
+                          onClick={() => setSelectedGradeForView(group.name)}
+                          className="bg-white border border-slate-200 hover:border-slate-400 rounded-xl p-4 shadow-2xs hover:shadow-xs transition cursor-pointer group flex flex-col justify-between"
                         >
                           <div>
-                            <div className="flex items-center gap-2">
-                              <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">
-                                {group.name}
-                              </h3>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition">
+                                  <BookOpen className="w-4 h-4" />
+                                </div>
+                                <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">
+                                  {group.name}
+                                </h3>
+                              </div>
                               <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold border border-slate-200">
                                 {group.stage}
                               </span>
                             </div>
-                            <span className="text-[11px] text-slate-500">
-                              {group.sections.length} شعب • {totalStudentsInClass} طالب إجمالي
+
+                            <p className="text-xs text-slate-500 mt-2">
+                              {group.sections.length} شعب دراسية • {totalStudentsInClass} طالب مسجل
+                            </p>
+                          </div>
+
+                          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-blue-600 group-hover:text-blue-700 flex items-center gap-1">
+                              عرض الشعب والتفاصيل
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              انقر للفتح
                             </span>
                           </div>
-
-                          <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-100 group-hover:bg-blue-50 group-hover:text-blue-700 px-2.5 py-1 rounded-md transition">
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span className="font-medium text-[11px]">تعديل / مسح</span>
-                          </div>
                         </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            ) : (
+              (() => {
+                const currentGroup = groupedClasses.find((g) => g.name === selectedGradeForView);
+                if (!currentGroup) {
+                  return (
+                    <div className="bg-white border border-slate-200 rounded-xl p-8 text-center space-y-3">
+                      <p className="text-xs text-slate-500">لم يتم العثور على بيانات الصف المطلوب.</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedGradeForView(null)}
+                        className="text-xs"
+                      >
+                        <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                        العودة لكافة الصفوف
+                      </Button>
+                    </div>
+                  );
+                }
 
-                        {/* قائمة الشعب الأبجدية - النقر على أي شعبة يفتح طلابها وخيارات الإضافة والنقل */}
-                        <div className="space-y-2">
-                          <span className="text-[11px] font-semibold text-slate-600 block mb-1.5">
-                            الشعب (انقر على الشعبة لعرض طلابها وإدارتها):
-                          </span>
-                          <div className="grid grid-cols-2 gap-2">
-                            {group.sections.map((sec) => {
-                              const secStudents = students.filter((s) => s.classId === sec.id).length;
-                              return (
-                                <div
-                                  key={sec.id}
-                                  onClick={() => {
-                                    setSelectedSection({ id: sec.id, name: group.name, section: sec.section });
-                                    setSectionModal(true);
-                                  }}
-                                  className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs hover:border-slate-900 hover:bg-slate-100 cursor-pointer transition shadow-2xs group"
-                                  title="انقر لعرض طلاب الشعبة ونقل أو إضافة طلاب"
-                                >
-                                  <div>
-                                    <div className="font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
-                                      الشعبة ({sec.section})
-                                    </div>
-                                    <div className="text-[10px] text-slate-500">
-                                      {secStudents} طالب مسجل
-                                    </div>
-                                  </div>
+                const currentTotalStudents = currentGroup.sections.reduce(
+                  (acc, sec) => acc + students.filter((s) => s.classId === sec.id).length,
+                  0
+                );
 
-                                  <div className="text-[10px] bg-white border border-slate-200 group-hover:border-slate-400 px-2 py-0.5 rounded text-slate-600">
-                                    فتح الشعبة ←
-                                  </div>
-                                </div>
-                              );
-                            })}
+                return (
+                  <div className="space-y-4">
+                    {/* شريط معلومات الصف مع زر العودة */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200">
+                      <div className="flex items-center gap-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedGradeForView(null)}
+                          className="h-8 gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300 bg-slate-50 hover:bg-slate-100 shrink-0"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5" />
+                          العودة لكافة الصفوف
+                        </Button>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-base font-bold text-slate-900">{currentGroup.name}</h2>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold border border-slate-200">
+                              {currentGroup.stage}
+                            </span>
                           </div>
+                          <p className="text-xs text-slate-500">
+                            {currentGroup.sections.length} شعب • {currentTotalStudents} طالب مسجل إجمالاً
+                          </p>
                         </div>
                       </div>
 
-                      <div className="mt-4 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                        <span>العام الدراسي: {settings.academicYear}</span>
-                        <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[10px]">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedGroupForEdit(currentGroup);
+                            setEditClassName(currentGroup.name);
+                            setEditClassStage(currentGroup.stage);
+                            setEditClassModal(true);
+                          }}
+                          className="h-8 text-xs text-slate-700 hover:text-slate-900 border-slate-300"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 ml-1.5 text-slate-500" />
+                          تعديل / مسح الصف
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* تفاصيل الشعب التابعة لهذا الصف */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+                      <div className="mb-3 pb-2.5 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                          <h3 className="font-bold text-slate-900 text-sm">الشعب الدراسية التابعة للصف</h3>
+                          <p className="text-[11px] text-slate-500">
+                            انقر على أي شعبة لإدارتها أو نقل وإضافة الطلاب إليها
+                          </p>
+                        </div>
+                        <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                          {currentGroup.sections.length} شعبة
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {currentGroup.sections.map((sec) => {
+                          const secStudents = students.filter((s) => s.classId === sec.id).length;
+                          return (
+                            <div
+                              key={sec.id}
+                              onClick={() => {
+                                setSelectedSection({ id: sec.id, name: currentGroup.name, section: sec.section });
+                                setSectionModal(true);
+                              }}
+                              className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-900 hover:bg-slate-100 cursor-pointer transition shadow-2xs group"
+                              title="انقر لعرض طلاب الشعبة ونقل أو إضافة طلاب"
+                            >
+                              <div>
+                                <div className="font-bold text-slate-900 text-sm group-hover:text-blue-700 transition-colors">
+                                  الشعبة ({sec.section})
+                                </div>
+                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                  {secStudents} طالب مسجل
+                                </div>
+                              </div>
+
+                              <div className="text-[11px] font-bold bg-white border border-slate-200 group-hover:border-slate-900 px-2.5 py-1 rounded-lg text-slate-700 transition shadow-2xs">
+                                فتح الشعبة ←
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                        <span>العام الدراسي الحالي: {settings.academicYear}</span>
+                        <span className="text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200 text-[10px]">
                           نشط ومجدول
                         </span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })()
             )}
           </div>
         )}
