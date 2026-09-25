@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Users,
+  User,
   UserPlus,
   BookOpen,
   Calendar,
@@ -131,9 +132,10 @@ export function ManagementDashboard({
   const [studentToMoveId, setStudentToMoveId] = useState("");
   const [moveLoading, setMoveLoading] = useState(false);
 
-  // نافذة تفاصيل الطالب المنفرد
+  // نافذة تفاصيل الطالب المنفرد والبحث
   const [studentDetailModal, setStudentDetailModal] = useState(false);
-  const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
+  const [selectedStudentForModal, setSelectedStudentForModal] = useState<Student | null>(null);
+  const [studentSearch, setStudentSearch] = useState("");
 
   // القائمة الجانبية في الشاشات الصغيرة
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -171,6 +173,8 @@ export function ManagementDashboard({
   const [selectedGradeName, setSelectedGradeName] = useState<string>("");
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentMsg, setStudentMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+
 
   // إشعار نسخ الرابط المباشر
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
@@ -1484,155 +1488,160 @@ export function ManagementDashboard({
         {/* سجل الطلاب */}
         {activeTab === "students" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">سجل الطلاب المركزي</h2>
-                <p className="text-xs text-slate-500">بيانات الطلاب وتفاصيل أولياء الأمور</p>
+            {/* الترويسة وخانة البحث الذكي وزر الإضافة */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-2">
+                <School className="w-5 h-5 text-slate-800" />
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">سجل الطلاب</h2>
+                  <p className="text-[11px] text-slate-500">
+                    إجمالي {students.length} طالب • انقر على أي طالب لعرض ملفه والواتساب وكشف الدرجات
+                  </p>
+                </div>
               </div>
-              <Button
-                onClick={() => {
-                  setStudentMsg(null);
-                  setSelectedGradeName("");
-                  setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
-                  setNewStudentModal(true);
-                }}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
-              >
-                <Plus className="w-3.5 h-3.5 ml-1.5" />
-                تسجيل طالب وولي أمر
-              </Button>
+
+              {/* خانة البحث الذكي وزر + لإضافة طالب */}
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="relative flex-1 sm:w-72">
+                  <Search className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    placeholder="ابحث باسم الطالب، الصف، الشعبة، ولي الأمر..."
+                    className="w-full pl-8 pr-9 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-800 focus:bg-white transition"
+                  />
+                  {studentSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setStudentSearch("")}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                      title="مسح البحث"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                <Button
+                  onClick={() => {
+                    setStudentMsg(null);
+                    setSelectedGradeName("");
+                    setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
+                    setNewStudentModal(true);
+                  }}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 w-8 p-0 rounded-lg shrink-0 shadow-xs"
+                  title="تسجيل طالب وولي أمر جديد"
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
-                  <tr>
-                    <th className="p-3">اسم الطالب</th>
-                    <th className="p-3">الصف والشعبة</th>
-                    <th className="p-3">ولي الأمر</th>
-                    <th className="p-3">الروابط المباشرة (بدون رمز)</th>
-                    <th className="p-3">نقل الشعبة</th>
-                    <th className="p-3 text-center">التقرير الأكاديمي</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {students.map((student) => {
-                    const directParentLink = typeof window !== "undefined"
-                      ? `${window.location.origin}/portal?role=parent&id=${student.id}&name=${encodeURIComponent(student.parentName)}`
-                      : `/portal?role=parent&id=${student.id}`;
+            {/* قائمة الطلاب في شبكة كروت أنيقة ومرتبة (كل طالبين بجانب بعض) */}
+            {(() => {
+              const filteredStudents = students.filter((s) => {
+                if (!studentSearch.trim()) return true;
+                const q = studentSearch.trim().toLowerCase();
+                const digitsQ = q.replace(/[^0-9]/g, "");
+                const matchName = (s.name || "").toLowerCase().includes(q);
+                const matchClass = (s.className || "").toLowerCase().includes(q);
+                const matchParent = (s.parentName || "").toLowerCase().includes(q);
+                const phoneDigits = (s.parentPhone || "").replace(/[^0-9]/g, "");
+                const matchPhone = digitsQ.length > 0 && phoneDigits.includes(digitsQ);
+                return matchName || matchClass || matchParent || matchPhone;
+              });
 
-                    const directStudentLink = typeof window !== "undefined"
-                      ? `${window.location.origin}/portal?role=student&id=${student.id}&name=${encodeURIComponent(student.name)}`
-                      : `/portal?role=student&id=${student.id}`;
+              if (students.length === 0) {
+                return (
+                  <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                    <School className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                    <h3 className="font-bold text-slate-700 text-sm mb-1">لا يوجد طلاب مسجلون بعد</h3>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
+                      اضغط على زر &quot;+&quot; لتسجيل أول طالب وولي أمر في المنظومة.
+                    </p>
+                    <Button
+                      onClick={() => {
+                        setStudentMsg(null);
+                        setSelectedGradeName("");
+                        setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
+                        setNewStudentModal(true);
+                      }}
+                      className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      تسجيل طالب جديد الآن
+                    </Button>
+                  </div>
+                );
+              }
 
+              if (filteredStudents.length === 0) {
+                return (
+                  <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
+                    <Search className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <p className="text-xs text-slate-500 mb-2">
+                      لا توجد نتائج مطابقة لبحثك عن &quot;{studentSearch}&quot;
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setStudentSearch("")}
+                      className="text-xs h-7"
+                    >
+                      مسح البحث وعرض كافة الطلاب
+                    </Button>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
+                  {filteredStudents.map((student) => {
                     return (
-                      <tr key={student.id} className="hover:bg-slate-50/60">
-                        <td className="p-3 font-semibold text-slate-900">{student.name}</td>
-                        <td className="p-3 text-slate-600">{student.className}</td>
-                        <td className="p-3 text-slate-600">
-                          <div className="font-semibold text-slate-800">{student.parentName}</div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[11px] text-slate-500 font-mono" dir="ltr">
-                              {parseAndFormatPhone(student.parentPhone).displayFormatted}
-                            </span>
-                            {student.parentPhone && student.parentPhone !== "-" && (
-                              <button
-                                onClick={() => sendWhatsAppToParent(student)}
-                                className="inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 transition"
-                                title="مراسلة ولي الأمر برابط المتابعة المباشر عبر واتساب"
-                              >
-                                <Share2 className="w-2.5 h-2.5 text-emerald-600" />
-                                <span>واتساب</span>
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex flex-col gap-1.5">
-                            {/* رابط ولي الأمر */}
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-slate-500 font-semibold w-14">ولي الأمر:</span>
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(directParentLink, `رابط ولي أمر الطالب ${student.name}`)}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] border border-slate-200"
-                                title="نسخ رابط ولي الأمر"
-                              >
-                                <Copy className="w-2.5 h-2.5" />
-                                <span>نسخ</span>
-                              </button>
-                              <a
-                                href={directParentLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-50 hover:bg-slate-100 text-slate-600 text-[10px] border border-slate-200"
-                                title="فتح لوحة ولي الأمر"
-                              >
-                                <ExternalLink className="w-2.5 h-2.5" />
-                                <span>فتح</span>
-                              </a>
+                      <div
+                        key={student.id}
+                        onClick={() => {
+                          setSelectedStudentForModal(student);
+                          setStudentDetailModal(true);
+                        }}
+                        className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-3 shadow-2xs hover:shadow-xs transition-all cursor-pointer flex flex-col justify-between group active:scale-[0.99]"
+                        title="انقر لعرض كامل بيانات الطالب وولي الأمر والواتساب"
+                      >
+                        <div className="space-y-2">
+                          {/* رمز واسم الطالب */}
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-xs shrink-0 group-hover:bg-blue-600 transition-colors shadow-2xs">
+                              {student.name.charAt(0)}
                             </div>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-bold text-xs sm:text-sm text-slate-900 truncate group-hover:text-blue-600 transition-colors">
+                                {student.name}
+                              </h3>
+                            </div>
+                          </div>
 
-                            {/* رابط الطالب */}
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-slate-500 font-semibold w-14">الطالب:</span>
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(directStudentLink, `رابط الطالب ${student.name}`)}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] border border-slate-200"
-                                title="نسخ رابط الطالب"
-                              >
-                                <Copy className="w-2.5 h-2.5" />
-                                <span>نسخ</span>
-                              </button>
-                              <a
-                                href={directStudentLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-50 hover:bg-slate-100 text-slate-600 text-[10px] border border-slate-200"
-                                title="فتح لوحة الطالب"
-                              >
-                                <ExternalLink className="w-2.5 h-2.5" />
-                                <span>فتح</span>
-                              </a>
-                            </div>
+                          {/* اسم الصف والشعبة */}
+                          <div>
+                            <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200/80 truncate max-w-full">
+                              {student.className}
+                            </span>
                           </div>
-                        </td>
-                        <td className="p-3">
-                          <select
-                            value={student.classId || ""}
-                            onChange={(e) => handleMoveStudent(student.id, e.target.value)}
-                            className="bg-white border border-slate-300 rounded px-2 py-1 text-xs text-slate-800"
-                          >
-                            {classes.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name} ({c.section})
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            onClick={() => handleGenerateStudentPDF(student)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-xs border border-slate-200"
-                          >
-                            <FileDown className="w-3.5 h-3.5 text-slate-600" />
-                            <span>كشف درجات PDF</span>
-                          </button>
-                        </td>
-                      </tr>
+                        </div>
+
+                        {/* مؤشر النقر */}
+                        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400 font-medium">الملف والواتساب</span>
+                          <span className="font-bold text-blue-600 group-hover:text-blue-700 flex items-center gap-0.5">
+                            التفاصيل ←
+                          </span>
+                        </div>
+                      </div>
                     );
                   })}
-                  {students.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="p-6 text-center text-slate-400">
-                        لا يوجد طلاب مسجلون بعد. اضغط &quot;تسجيل طالب وولي أمر&quot; لإضافة أول طالب في المدرسة.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -2701,7 +2710,7 @@ export function ManagementDashboard({
                             type="button"
                             size="sm"
                             onClick={() => {
-                              setViewingStudent(stu);
+                              setSelectedStudentForModal(stu);
                               setStudentDetailModal(true);
                             }}
                             className="bg-white hover:bg-slate-200 text-slate-900 border border-slate-200 text-[10px] h-7 px-2"
@@ -2798,74 +2807,232 @@ export function ManagementDashboard({
         </div>
       )}
 
-      {/* نافذة تفاصيل الطالب الكاملة */}
-      {studentDetailModal && viewingStudent && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
-                  {viewingStudent.name.charAt(0)}
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900">{viewingStudent.name}</h3>
-                  <span className="text-[11px] text-slate-500 font-medium">طالب مسجل</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStudentDetailModal(false)}
-                className="text-slate-400 hover:text-slate-700 p-1"
-              >
-                ✕
-              </button>
-            </div>
+      {/* نافذة تفاصيل الطالب الشاملة */}
+      {studentDetailModal && selectedStudentForModal && (() => {
+        const student = selectedStudentForModal;
+        const directParentLink = typeof window !== "undefined"
+          ? `${window.location.origin}/portal?role=parent&id=${student.id}&name=${encodeURIComponent(student.parentName)}`
+          : `/portal?role=parent&id=${student.id}`;
 
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <div>
-                  <span className="text-[10px] text-slate-500 block">الصف والشعبة:</span>
-                  <span className="font-bold text-slate-800">{viewingStudent.className}</span>
+        const directStudentLink = typeof window !== "undefined"
+          ? `${window.location.origin}/portal?role=student&id=${student.id}&name=${encodeURIComponent(student.name)}`
+          : `/portal?role=student&id=${student.id}`;
+
+        return (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl w-full max-w-lg p-5 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col">
+              {/* رأس المودال */}
+              <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-base shadow-xs">
+                    {student.name.charAt(0)}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-slate-900">{student.name}</h3>
+                    <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 mt-0.5">
+                      {student.className}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[10px] text-slate-500 block">نسبة الحضور:</span>
-                  <span className="font-bold text-emerald-600">{viewingStudent.attendanceRate}%</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-500 block">ولي الأمر:</span>
-                  <span className="font-bold text-slate-800">{viewingStudent.parentName}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-500 block">رقم هاتف ولي الأمر:</span>
-                  <span className="font-mono text-slate-800" dir="ltr">{viewingStudent.parentPhone}</span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setStudentDetailModal(false)}
+                  className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              <div className="flex flex-col gap-2 pt-2">
+              {/* محتوى التفاصيل */}
+              <div className="flex-1 overflow-y-auto py-4 space-y-4 text-xs">
+                {/* بطاقة ولي الأمر والاتصال السريع */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 text-xs">بيانات ولي الأمر والاتصال السريع</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-white font-semibold text-slate-600 border border-slate-200">
+                      معتمد
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                      <span className="text-[10px] text-slate-400 block mb-0.5">اسم ولي الأمر:</span>
+                      <span className="font-bold text-slate-900">{student.parentName || "غير محدد"}</span>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                      <span className="text-[10px] text-slate-400 block mb-0.5">رقم الهاتف:</span>
+                      <span className="font-bold text-slate-900 font-mono" dir="ltr">
+                        {parseAndFormatPhone(student.parentPhone).displayFormatted}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* أزرار الاتصال بولي الأمر (واتساب ومكالمة) */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    {student.parentPhone && student.parentPhone !== "-" ? (
+                      <button
+                        type="button"
+                        onClick={() => sendWhatsAppToParent(student)}
+                        className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-3 rounded-lg shadow-2xs transition"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>مراسلة واتساب</span>
+                      </button>
+                    ) : (
+                      <button disabled className="bg-slate-200 text-slate-400 font-bold py-2 px-3 rounded-lg cursor-not-allowed">
+                        لا يوجد هاتف واتساب
+                      </button>
+                    )}
+
+                    {student.parentPhone && student.parentPhone !== "-" ? (
+                      <a
+                        href={`tel:${student.parentPhone}`}
+                        className="flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 px-3 rounded-lg shadow-2xs transition"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        <span>اتصال هاتفي</span>
+                      </a>
+                    ) : (
+                      <button disabled className="bg-slate-200 text-slate-400 font-bold py-2 px-3 rounded-lg cursor-not-allowed">
+                        لا يوجد هاتف
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* بطاقة الروابط المباشرة (بدون رمز) */}
+                <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                  <h4 className="font-bold text-xs text-slate-900">روابط المتابعة المباشرة (بدون رمز سري):</h4>
+
+                  {/* رابط ولي الأمر */}
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-bold text-slate-800 block text-xs">لوحة ولي الأمر</span>
+                      <span className="text-[10px] text-slate-400 truncate block">لمتابعة الحضور والدرجات والواجبات</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(directParentLink, `رابط ولي أمر الطالب ${student.name}`)}
+                        className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-[11px] inline-flex items-center gap-1 transition"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>نسخ</span>
+                      </button>
+                      <a
+                        href={directParentLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] inline-flex items-center gap-1 transition"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>فتح</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* رابط الطالب */}
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-bold text-slate-800 block text-xs">لوحة الطالب</span>
+                      <span className="text-[10px] text-slate-400 truncate block">للاطلاع على الجدول والمواد والدروس</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(directStudentLink, `رابط الطالب ${student.name}`)}
+                        className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-[11px] inline-flex items-center gap-1 transition"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>نسخ</span>
+                      </button>
+                      <a
+                        href={directStudentLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] inline-flex items-center gap-1 transition"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>فتح</span>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                {/* نقل الشعبة وكشف الدرجات */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                  <span className="font-bold text-slate-800 text-xs block">الإجراءات الصفية والأكاديمية</span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* تغيير الشعبة */}
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-700 block">نقل إلى شعبة أخرى:</label>
+                      <select
+                        value={student.classId || ""}
+                        onChange={(e) => {
+                          const targetId = e.target.value;
+                          handleMoveStudent(student.id, targetId);
+                          const newClass = classes.find((c) => c.id === targetId);
+                          if (newClass) {
+                            setSelectedStudentForModal((prev) =>
+                              prev ? { ...prev, classId: newClass.id, className: `${newClass.name} (${newClass.section})` } : null
+                            );
+                          }
+                        }}
+                        className="w-full bg-slate-50 border border-slate-300 rounded px-2 py-1.5 text-xs text-slate-800 font-medium"
+                      >
+                        {classes.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.section})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* كشف درجات PDF */}
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-col justify-between">
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">التقرير الأكاديمي:</label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleGenerateStudentPDF(student)}
+                        className="w-full h-8 text-xs font-semibold gap-1.5 text-slate-800 border-slate-300 hover:bg-slate-100"
+                      >
+                        <FileDown className="w-3.5 h-3.5 text-slate-600" />
+                        <span>تحميل كشف درجات PDF</span>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* تذييل المودال */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                 <Button
                   type="button"
-                  onClick={() => handleGenerateStudentPDF(viewingStudent)}
-                  className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                  variant="ghost"
+                  onClick={() => {
+                    setStudentDetailModal(false);
+                    handleDeleteStudent(student.id, student.name);
+                  }}
+                  className="text-xs h-8 gap-1.5 font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                 >
-                  <FileDown className="w-3.5 h-3.5" />
-                  <span>طباعة بطاقة الطالب وتقرير المتابعة</span>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>حذف قيد الطالب نهائياً</span>
                 </Button>
 
-                {viewingStudent.parentPhone && viewingStudent.parentPhone !== "-" && (
-                  <a
-                    href={`https://wa.me/${parseAndFormatPhone(viewingStudent.parentPhone).whatsappNumber}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-1.5 w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs h-8 rounded-md font-semibold transition"
-                  >
-                    <span>مراسلة ولي الأمر عبر واتساب ↗</span>
-                  </a>
-                )}
+                <Button
+                  type="button"
+                  onClick={() => setStudentDetailModal(false)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 px-4"
+                >
+                  إغلاق
+                </Button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* نافذة تفاصيل المعلم الشاملة والصفوف الموزعة له بالجدول */}
       {teacherDetailModal && selectedTeacherForView && (() => {
