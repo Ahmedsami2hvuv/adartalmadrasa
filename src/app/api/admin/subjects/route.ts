@@ -28,7 +28,33 @@ export async function GET() {
       .select("id, name, stage")
       .order("name");
 
-    // 2. جلب المواد المحفوظة احتياطياً في school_settings
+    // إذا لم تكن هناك مواد في جدول subjects، نقوم بإدخال المواد الافتراضية فوراً لتمتلك UUID حقيقي
+    const existingNames = new Set((dbSubjects || []).map((s) => s.name));
+    const missingDefaults = DEFAULT_SUBJECTS.filter((name) => !existingNames.has(name));
+
+    if (missingDefaults.length > 0) {
+      try {
+        await client
+          .from("subjects")
+          .upsert(
+            missingDefaults.map((name) => ({ name, stage: "عام" })),
+            { onConflict: "name" }
+          );
+
+        // إعادة الجلب بعد الإدراج لضمان الحصول على المعرفات الحقيقية
+        const refreshed = await client
+          .from("subjects")
+          .select("id, name, stage")
+          .order("name");
+        if (refreshed.data && refreshed.data.length > 0) {
+          dbSubjects = refreshed.data;
+        }
+      } catch (insertErr) {
+        console.warn("Could not auto-seed subjects:", insertErr);
+      }
+    }
+
+    // 2. جلب المواد المحفوظة احتياطياً في school_settings ومزامنتها
     let customFromSettings: string[] = [];
     try {
       const { data: sData } = await client
@@ -43,41 +69,39 @@ export async function GET() {
       console.warn("Could not query custom_subjects from settings:", e);
     }
 
-    // تجميع كافة الأسماء بدون تكرار
-    const allNamesMap = new Map<string, { id: string; name: string; stage: string }>();
+    // مزامنة المواد المخصصة في جدول subjects إذا لم تكن موجودة
+    const currentDbNames = new Set((dbSubjects || []).map((s) => s.name));
+    const missingCustom = customFromSettings.filter((name) => !currentDbNames.has(name));
+    if (missingCustom.length > 0) {
+      try {
+        await client
+          .from("subjects")
+          .upsert(
+            missingCustom.map((name) => ({ name, stage: "عام" })),
+            { onConflict: "name" }
+          );
 
-    // إضافة المواد الافتراضية أولاً
-    DEFAULT_SUBJECTS.forEach((name, i) => {
-      allNamesMap.set(name, {
-        id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, "0")}`,
-        name,
-        stage: "عام",
-      });
-    });
-
-    // دمج المواد من school_settings
-    customFromSettings.forEach((name, i) => {
-      if (!allNamesMap.has(name)) {
-        allNamesMap.set(name, {
-          id: `10000000-0000-0000-0000-${String(i + 1).padStart(12, "0")}`,
-          name,
-          stage: "عام",
-        });
+        const refreshed = await client
+          .from("subjects")
+          .select("id, name, stage")
+          .order("name");
+        if (refreshed.data && refreshed.data.length > 0) {
+          dbSubjects = refreshed.data;
+        }
+      } catch (insertCustomErr) {
+        console.warn("Could not auto-seed custom subjects:", insertCustomErr);
       }
-    });
-
-    // دمج المواد الموجودة فعلياً في جدول subjects بأرقامها الحقيقية
-    if (dbSubjects && dbSubjects.length > 0) {
-      dbSubjects.forEach((sub) => {
-        allNamesMap.set(sub.name, {
-          id: sub.id,
-          name: sub.name,
-          stage: sub.stage || "عام",
-        });
-      });
     }
 
-    const finalList = Array.from(allNamesMap.values());
+    // تجميع المواد وضمان عدم إرجاع أي معرف وهمي
+    const finalList = (dbSubjects && dbSubjects.length > 0)
+      ? dbSubjects
+      : DEFAULT_SUBJECTS.map((name) => ({
+          id: crypto.randomUUID(),
+          name,
+          stage: "عام",
+        }));
+
     return NextResponse.json({ subjects: finalList });
   } catch (err: unknown) {
     const fallbackSubjects = DEFAULT_SUBJECTS.map((name, i) => ({

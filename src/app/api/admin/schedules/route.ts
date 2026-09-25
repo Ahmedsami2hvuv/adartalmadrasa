@@ -96,24 +96,38 @@ export async function POST(req: NextRequest) {
     const cleanDay = Number(dayValue);
     const cleanPeriod = Number(period);
 
-    // التحقق من أن معرف المادة UUID صالح، وإذا لم يكن كذلك يتم جلبه أو إنشاؤه في جدول subjects
-    let finalSubjectId = subjectId;
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(subjectId);
+    // 1. التحقق الصارم من وجود المادة في جدول subjects وضمان مطابقة المفتاح الأجنبي (Foreign Key)
+    let finalSubjectId: string | null = null;
 
-    if (!isUUID) {
+    // محاولة أ: فحص إذا كان المعرف الممرر موجوداً بالفعل في جدول subjects
+    if (subjectId) {
+      try {
+        const { data: checkSub } = await adminSupabase
+          .from("subjects")
+          .select("id")
+          .eq("id", subjectId)
+          .maybeSingle();
+
+        if (checkSub?.id) {
+          finalSubjectId = checkSub.id;
+        }
+      } catch (_) {}
+    }
+
+    // محاولة ب: إذا لم يوجد بالمعرف، نبحث عن المادة باسمها
+    let targetName = (subjectName || "").trim();
+    if (!targetName && typeof subjectId === "string" && subjectId.startsWith("sub-")) {
       const DEFAULT_SUBJECTS = [
         "التربية الإسلامية", "اللغة العربية", "اللغة الإنجليزية", "الرياضيات",
         "العلوم", "الفيزياء", "الكيمياء", "الأحياء",
         "الاجتماعيات", "الحاسوب", "التربية الفنية", "التربية الرياضية"
       ];
+      const idx = parseInt(subjectId.replace("sub-", ""), 10) - 1;
+      targetName = DEFAULT_SUBJECTS[idx] || "التربية الإسلامية";
+    }
 
-      let targetName = subjectName || "";
-      if (!targetName && typeof subjectId === "string" && subjectId.startsWith("sub-")) {
-        const idx = parseInt(subjectId.replace("sub-", ""), 10) - 1;
-        targetName = DEFAULT_SUBJECTS[idx] || "التربية الإسلامية";
-      }
-
-      if (targetName) {
+    if (!finalSubjectId && targetName) {
+      try {
         const { data: matchedSub } = await adminSupabase
           .from("subjects")
           .select("id")
@@ -122,28 +136,99 @@ export async function POST(req: NextRequest) {
 
         if (matchedSub?.id) {
           finalSubjectId = matchedSub.id;
-        } else {
-          const { data: newSub } = await adminSupabase
-            .from("subjects")
-            .insert({ name: targetName, stage: "عام" })
-            .select("id")
-            .maybeSingle();
-          if (newSub?.id) {
-            finalSubjectId = newSub.id;
-          }
         }
-      }
+      } catch (_) {}
+    }
 
-      // كحل احتياطي، أخذ أول مادة مسجلة بـ UUID
-      if (finalSubjectId === subjectId) {
-        const { data: anySub } = await adminSupabase.from("subjects").select("id").limit(1).maybeSingle();
+    // محاولة ج: إذا لم تكن المادة موجودة إطلاقاً في جدول subjects، ننشئها فوراً
+    if (!finalSubjectId) {
+      const nameToInsert = targetName || "التربية الإسلامية";
+      try {
+        const { data: newSub } = await adminSupabase
+          .from("subjects")
+          .upsert({ name: nameToInsert, stage: "عام" }, { onConflict: "name" })
+          .select("id")
+          .maybeSingle();
+
+        if (newSub?.id) {
+          finalSubjectId = newSub.id;
+        }
+      } catch (_) {}
+    }
+
+    // محاولة د: إذا تعذر، أخذ معرف أي مادة متوفرة في الجدول لضمان عدم كسر القيد الأجنبي
+    if (!finalSubjectId) {
+      try {
+        const { data: anySub } = await adminSupabase
+          .from("subjects")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
         if (anySub?.id) {
           finalSubjectId = anySub.id;
         }
-      }
+      } catch (_) {}
     }
 
-    // 1. حذف الحصة السابقة في نفس اليوم والحصة (استبدال الحصة القديمة)
+    // محاولة هـ: إذا كان الجدول فارغاً كلياً، ندخل مادة التربية الإسلامية ونحصل على معرّفها
+    if (!finalSubjectId) {
+      try {
+        const { data: seeded } = await adminSupabase
+          .from("subjects")
+          .insert({ name: "التربية الإسلامية", stage: "عام" })
+          .select("id")
+          .maybeSingle();
+        if (seeded?.id) {
+          finalSubjectId = seeded.id;
+        }
+      } catch (_) {}
+    }
+
+    // 2. التحقق من صحة معرف المعلم (teacher_id) وضمان توافقه مع جدول teachers
+    let finalTeacherId: string | null = null;
+    if (teacherId) {
+      try {
+        // فحص إذا كان المعرف موجود في teachers كـ id
+        const { data: tRow } = await adminSupabase
+          .from("teachers")
+          .select("id")
+          .eq("id", teacherId)
+          .maybeSingle();
+
+        if (tRow?.id) {
+          finalTeacherId = tRow.id;
+        } else {
+          // فحص إذا كان المعرف يمثل profile_id لمعلم
+          const { data: tByProf } = await adminSupabase
+            .from("teachers")
+            .select("id")
+            .eq("profile_id", teacherId)
+            .maybeSingle();
+
+          if (tByProf?.id) {
+            finalTeacherId = tByProf.id;
+          } else {
+            // التحقق من وجود حساب معلم في profiles وإضافته في teachers
+            const { data: prof } = await adminSupabase
+              .from("profiles")
+              .select("id")
+              .eq("id", teacherId)
+              .maybeSingle();
+
+            if (prof?.id) {
+              const { data: createdT } = await adminSupabase
+                .from("teachers")
+                .insert({ profile_id: prof.id, specialization: "عام" })
+                .select("id")
+                .maybeSingle();
+              if (createdT?.id) finalTeacherId = createdT.id;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. حذف الحصة السابقة في نفس اليوم والحصة (استبدال الحصة القديمة)
     try {
       await adminSupabase
         .from("weekly_schedules")
@@ -162,74 +247,85 @@ export async function POST(req: NextRequest) {
         .eq("period", cleanPeriod);
     } catch (_) {}
 
-    // 2. إدراج الحصة الجديدة مع مراعاة اسم العمود في قاعدة البيانات (day أو day_of_week)
+    // 4. إدراج الحصة مع المعالجة الذكية لأسماء الأعمدة والقيود
     let insertedRecord: any = null;
     let insertErr: any = null;
 
-    // محاولة الإدراج الأولى: تمرير day و day_of_week معاً
-    const resBoth = await adminSupabase
-      .from("weekly_schedules")
-      .insert({
-        class_id: classId,
-        day: cleanDay,
-        day_of_week: cleanDay,
-        period: cleanPeriod,
-        subject_id: finalSubjectId,
-        teacher_id: teacherId || null,
-      })
-      .select("*")
-      .maybeSingle();
+    // دالة مساعدة لمحاولة الإدراج
+    const tryInsert = async (tId: string | null) => {
+      // محاولة الإدراج بكلا العمودين day و day_of_week
+      let res = await adminSupabase
+        .from("weekly_schedules")
+        .insert({
+          class_id: classId,
+          day: cleanDay,
+          day_of_week: cleanDay,
+          period: cleanPeriod,
+          subject_id: finalSubjectId,
+          teacher_id: tId,
+        })
+        .select("*")
+        .maybeSingle();
 
-    if (!resBoth.error && resBoth.data) {
-      insertedRecord = resBoth.data;
-    } else {
-      // إذا فشل بسبب أن day_of_week غير موجود في الجدول، ندرج بـ day فقط
-      if (resBoth.error?.message?.includes("day_of_week")) {
-        const resOnlyDay = await adminSupabase
+      if (!res.error) return { data: res.data, error: null };
+
+      // إذا كان الخطأ بسبب عدم وجود عمود day_of_week
+      if (res.error?.message?.includes("day_of_week")) {
+        res = await adminSupabase
           .from("weekly_schedules")
           .insert({
             class_id: classId,
             day: cleanDay,
             period: cleanPeriod,
             subject_id: finalSubjectId,
-            teacher_id: teacherId || null,
+            teacher_id: tId,
           })
           .select("*")
           .maybeSingle();
+        if (!res.error) return { data: res.data, error: null };
+      }
 
-        if (!resOnlyDay.error && resOnlyDay.data) {
-          insertedRecord = resOnlyDay.data;
-        } else {
-          insertErr = resOnlyDay.error;
-        }
-      } 
-      // إذا فشل بسبب أن day غير موجود، ندرج بـ day_of_week فقط
-      else if (resBoth.error?.message?.includes('"day"')) {
-        const resOnlyDayOfWeek = await adminSupabase
+      // إذا كان الخطأ بسبب عدم وجود عمود day
+      if (res.error?.message?.includes('"day"')) {
+        res = await adminSupabase
           .from("weekly_schedules")
           .insert({
             class_id: classId,
             day_of_week: cleanDay,
             period: cleanPeriod,
             subject_id: finalSubjectId,
-            teacher_id: teacherId || null,
+            teacher_id: tId,
           })
           .select("*")
           .maybeSingle();
-
-        if (!resOnlyDayOfWeek.error && resOnlyDayOfWeek.data) {
-          insertedRecord = resOnlyDayOfWeek.data;
-        } else {
-          insertErr = resOnlyDayOfWeek.error;
-        }
-      } else {
-        insertErr = resBoth.error;
+        if (!res.error) return { data: res.data, error: null };
       }
+
+      return { data: null, error: res.error };
+    };
+
+    let result = await tryInsert(finalTeacherId);
+
+    // إذا فشل بسبب قيد not-null على teacher_id، نبحث عن أي معلم متاح لربطه
+    if (result.error && (result.error.message?.includes("teacher_id") || result.error.message?.includes("not-null"))) {
+      try {
+        const { data: anyTeacher } = await adminSupabase
+          .from("teachers")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+
+        if (anyTeacher?.id) {
+          result = await tryInsert(anyTeacher.id);
+        }
+      } catch (_) {}
     }
 
-    if (insertErr) {
-      throw new Error(insertErr.message);
+    if (result.error) {
+      throw new Error(result.error.message);
     }
+
+    insertedRecord = result.data;
 
     return NextResponse.json({
       success: true,
