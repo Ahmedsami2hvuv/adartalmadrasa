@@ -724,7 +724,11 @@ export function ManagementDashboard({
                   {userRole === "director" ? "لوحة المدير العام" : "لوحة معاون المدير"}
                 </h1>
                 <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                  {currentUserName || "الإدارة المركزية"}
+                  {!currentUserName || currentUserName.includes("%") || /^[A-Fa-f0-9%]+$/.test(currentUserName)
+                    ? userRole === "director"
+                      ? "المدير العام"
+                      : "معاون المدير"
+                    : currentUserName}
                 </span>
                 {loadingData && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
               </div>

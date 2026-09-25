@@ -30,13 +30,29 @@ export default function DashboardPage() {
         const cookieRole = getCookie("auth_role") as "director" | "vice_director" | "teacher" | "student" | "parent" | null;
         const cookieName = getCookie("auth_name");
 
+        const cleanName = (() => {
+          if (!cookieName) return cookieRole === "director" ? "المدير العام" : "المعاون الإداري";
+          try {
+            let val = cookieName;
+            if (val.includes("%")) {
+              val = decodeURIComponent(val);
+            }
+            if (val.includes("%") || /^[A-Fa-f0-9%]+$/.test(val)) {
+              return cookieRole === "director" ? "المدير العام" : "المعاون الإداري";
+            }
+            return val.trim() || (cookieRole === "director" ? "المدير العام" : "المعاون الإداري");
+          } catch {
+            return cookieRole === "director" ? "المدير العام" : "المعاون الإداري";
+          }
+        })();
+
         const supabase = createClient();
         const { data: { session } } = await supabase.auth.getSession();
 
         if (cookieRole) {
           if (isMounted) {
             setRole(cookieRole);
-            setUserName(cookieName ? decodeURIComponent(cookieName) : "الإدارة العامة");
+            setUserName(cleanName);
             setLoading(false);
           }
           return;
