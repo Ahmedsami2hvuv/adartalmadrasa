@@ -1116,94 +1116,56 @@ export function ManagementDashboard({
                 </div>
               </div>
 
-              {/* قسم المتابعة السريعة وحالة المنظومة */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                {/* ملخص الصفوف والشعب الفعالة */}
-                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs lg:col-span-2">
-                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-slate-800" />
-                      <h3 className="font-bold text-xs text-slate-900">حالة الصفوف والشعب المعتمدة</h3>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("classes")}
-                      className="text-[11px] font-bold text-blue-600 hover:underline"
-                    >
-                      عرض الكل
-                    </button>
+              {/* ملخص الصفوف والشعب الفعالة */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-slate-800" />
+                    <h3 className="font-bold text-xs text-slate-900">حالة الصفوف والشعب المعتمدة</h3>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("classes")}
+                    className="text-[11px] font-bold text-blue-600 hover:underline"
+                  >
+                    إدارة كافة الصفوف والشعب ←
+                  </button>
+                </div>
 
-                  {groupedClasses.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-slate-400">
-                      لم يتم إنشاء أي صف دراسي بعد، يمكنك البدء بإضافة أول صف الآن.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {groupedClasses.slice(0, 4).map((group) => {
-                        const secStudents = group.sections.reduce(
-                          (acc, sec) => acc + students.filter((s) => s.classId === sec.id).length,
-                          0
-                        );
-                        return (
-                          <div
-                            key={group.name}
-                            onClick={() => setActiveTab("classes")}
-                            className="p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-400 transition cursor-pointer flex items-center justify-between"
-                          >
-                            <div>
-                              <div className="font-bold text-xs text-slate-900">{group.name}</div>
-                              <div className="text-[11px] text-slate-500">
-                                {group.sections.length} شعب • {secStudents} طالب
-                              </div>
-                            </div>
+                {groupedClasses.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-400">
+                    لم يتم إنشاء أي صف دراسي بعد، يمكنك البدء بإضافة أول صف الآن.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                    {groupedClasses.slice(0, 8).map((group) => {
+                      const secStudents = group.sections.reduce(
+                        (acc, sec) => acc + students.filter((s) => s.classId === sec.id).length,
+                        0
+                      );
+                      return (
+                        <div
+                          key={group.name}
+                          onClick={() => setActiveTab("classes")}
+                          className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-800 transition cursor-pointer flex flex-col justify-between gap-2 shadow-2xs group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-slate-900 group-hover:text-blue-700 transition-colors">
+                              {group.name}
+                            </span>
                             <span className="text-[10px] px-2 py-0.5 rounded bg-white border border-slate-200 font-semibold text-slate-700">
                               {group.stage}
                             </span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* بطاقة حالة المنظومة السحابية والكيانات */}
-                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-                  <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-                    <Activity className="w-4 h-4 text-emerald-600" />
-                    <h3 className="font-bold text-xs text-slate-900">حالة المنظومة والكيانات</h3>
+                          <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200/60">
+                            <span>{group.sections.length} شعب</span>
+                            <span className="font-bold text-slate-700">{secStudents} طالب</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-
-                  <div className="space-y-2.5 text-xs">
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <span className="text-slate-600 font-medium">قاعدة البيانات سوبابيس:</span>
-                      <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> متصلة وسريعة
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <span className="text-slate-600 font-medium">الاستضافة السحابية فيرسل:</span>
-                      <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> نشطة (Vercel)
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <span className="text-slate-600 font-medium">تخزين الصور كلاود فلير R2:</span>
-                      <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> مهيأ ومحمي
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <span className="text-slate-600 font-medium">بوت التيليجرام:</span>
-                      <span className="text-[11px] font-bold text-slate-700">
-                        {settings.telegramBotUsername ? `@${settings.telegramBotUsername}` : "جاهز للربط"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           )}
