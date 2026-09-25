@@ -491,49 +491,91 @@ export function ParentDashboard({ currentUserName }: { currentUserName?: string 
 
             {children.length > 0 ? (
               <>
-                {/* بطاقة معلومات الابن */}
-                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div>
-                    <span className="text-[11px] font-semibold text-slate-500">{activeChild.className}</span>
-                    <h2 className="text-base font-bold text-slate-900 mt-0.5">{activeChild.name}</h2>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Button
-                      onClick={() => handlePrintReport(activeChild)}
-                      className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 gap-1.5"
-                    >
-                      <FileDown className="w-3.5 h-3.5" />
-                      طباعة الشهادة والتقرير
-                    </Button>
-                  </div>
-                </div>
-
-                {/* كروت الإحصائيات الأكاديمية */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-                    <div className="text-xs text-slate-500 font-medium">نسبة المواظبة والحضور</div>
-                    <div className="text-xl font-bold text-emerald-700 mt-1">{activeChild.attendanceRate}%</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">سجل الغيابات: {activeChild.totalAbsences} يوم</div>
-                  </div>
-
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-                    <div className="text-xs text-slate-500 font-medium">المعدل العام التقديري</div>
-                    <div className="text-xl font-bold text-blue-700 mt-1">
-                      {activeChild.grades.length > 0
-                        ? `${Math.round(
-                            activeChild.grades.reduce((a, b) => a + b.total, 0) /
-                              activeChild.grades.length
-                          )}%`
-                        : "91%"}
+                {/* بطاقة معلومات الابن وحالته اليوم */}
+                <div className="grid md:grid-cols-3 gap-4">
+                  {/* كارت حالة الابن اليومية */}
+                  <div className="md:col-span-2 rounded-[24px] bg-white border border-slate-200/70 shadow-soft p-5 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                    <div className="flex gap-4 items-center">
+                      <div className="shrink-0 w-[84px] h-[84px] rounded-[22px] bg-gradient-to-br from-emerald-500 to-teal-600 grid place-items-center text-white relative shadow-md">
+                        <CheckCircle className="w-10 h-10 text-white" />
+                        <span className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-white text-emerald-600 grid place-items-center text-[11px] font-black shadow">
+                          ✓
+                        </span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-[16px] font-extrabold text-slate-900">
+                            حالة {activeChild.name.split(" ")[0]} اليوم
+                          </h3>
+                          <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                            حاضر اليوم
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          {activeChild.className} • مسجل في المنظومة
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-1.5 text-center">
+                            <span className="text-[10px] text-slate-400 block font-bold">الحضور</span>
+                            <span className="text-[12px] font-extrabold text-emerald-700">منتظم</span>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-1.5 text-center">
+                            <span className="text-[10px] text-slate-400 block font-bold">الغيابات</span>
+                            <span className="text-[12px] font-extrabold text-amber-700">{activeChild.totalAbsences} يوم</span>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-1.5 text-center">
+                            <span className="text-[10px] text-slate-400 block font-bold">نقاط السلوك</span>
+                            <span className="text-[12px] font-extrabold text-indigo-700">{activeChild.points || 100} نقطة</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">المستوى الأكاديمي: ممتاز</div>
+
+                    <div className="flex sm:flex-col gap-2 w-full sm:w-auto shrink-0">
+                      <Button
+                        onClick={() => handlePrintReport(activeChild)}
+                        className="flex-1 sm:flex-initial bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 rounded-xl gap-1.5 shadow-sm"
+                      >
+                        <FileDown className="w-3.5 h-3.5" />
+                        طباعة الشهادة
+                      </Button>
+                    </div>
                   </div>
 
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-                    <div className="text-xs text-slate-500 font-medium">نقاط السلوك والانضباط</div>
-                    <div className="text-xl font-bold text-purple-700 mt-1">{activeChild.points || 100} نقطة</div>
-                    <div className="text-[11px] text-emerald-600 mt-0.5 font-semibold">سلوك منضبط ومتميز</div>
+                  {/* كارت نسبة الحضور الشهري الدائري */}
+                  <div className="rounded-[24px] bg-gradient-to-br from-slate-900 to-indigo-800 p-5 text-white relative overflow-hidden shadow-soft flex flex-col justify-between">
+                    <div className="absolute -left-12 -top-12 w-36 h-36 bg-white/10 rounded-full blur-xl" />
+                    <div className="relative">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[12px] font-bold opacity-80">نسبة الحضور الشهري</span>
+                        <span className="text-[11px] bg-white/15 px-2 py-0.5 rounded-full font-bold">
+                          {activeChild.attendanceRate}%
+                        </span>
+                      </div>
+                      <div className="mt-4 flex items-center gap-4">
+                        <div className="w-[60px] h-[60px] rounded-full bg-white/10 grid place-items-center relative shrink-0">
+                          <div className="w-[48px] h-[48px] rounded-full bg-white text-slate-900 grid place-items-center font-black text-[13px] shadow">
+                            {activeChild.attendanceRate}%
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="h-2 rounded-full bg-white/15 overflow-hidden">
+                            <div
+                              className="h-full bg-white rounded-full transition-all duration-500"
+                              style={{ width: `${Math.min(activeChild.attendanceRate, 100)}%` }}
+                            />
+                          </div>
+                          <div className="mt-2 text-[11px] opacity-75">
+                            سجل الحضور ممتاز ومنتظم
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="relative mt-3 pt-2 border-t border-white/10 text-[10.5px] opacity-70 flex justify-between">
+                      <span>إجمالي أيام الغياب</span>
+                      <span className="font-bold">{activeChild.totalAbsences} يوم فقط</span>
+                    </div>
                   </div>
                 </div>
 

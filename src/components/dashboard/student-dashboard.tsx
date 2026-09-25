@@ -13,6 +13,7 @@ import {
   Loader2,
   Menu,
   X,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
@@ -449,40 +450,210 @@ export function StudentDashboard({ currentUserName }: { currentUserName?: string
         <main className="p-4 md:p-6 max-w-7xl w-full mx-auto space-y-5 flex-1">
         {/* اليوم */}
         {activeTab === "today" && (
-          <div className="space-y-4">
-            <div className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-between">
-              <div>
-                <div className="font-bold text-slate-900 text-sm">حصص اليوم المقررة</div>
-                <div className="text-xs text-slate-500">{studentData.className}</div>
+          <div className="space-y-5">
+            {/* بطاقة الترحيب والملخص البصري */}
+            <div className="grid lg:grid-cols-[1.2fr_0.8fr] gap-4">
+              <div className="rounded-[26px] bg-white border border-slate-200/70 shadow-soft p-5 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-full h-[120px] bg-gradient-to-l from-violet-100 via-indigo-50 to-transparent opacity-60" />
+                <div className="relative flex items-start justify-between gap-4">
+                  <div className="flex gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white grid place-items-center font-bold text-lg shadow">
+                      {studentData.name.charAt(0) || "ط"}
+                    </div>
+                    <div>
+                      <div className="text-[12px] text-slate-500 font-bold flex items-center gap-1">
+                        <span>أهلاً بعودتك يا بطل</span>
+                        <span>🚀</span>
+                      </div>
+                      <div className="text-[18px] font-extrabold text-slate-900 mt-0.5">
+                        {studentData.name} • {studentData.className}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <span className="text-[11px] bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
+                          <Award className="w-3.5 h-3.5" />
+                          <span>المركز {studentData.rank || "المتميز"}</span>
+                        </span>
+                        <span className="text-[11px] bg-slate-900 text-white px-2.5 py-1 rounded-full font-bold">
+                          {todaySchedule.length} حصص اليوم
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="hidden md:block text-[11px] bg-white border border-slate-200 px-3 py-1.5 rounded-full font-bold text-slate-700 shadow-2xs">
+                    “المثابرة تصنع التفوق”
+                  </div>
+                </div>
+
+                <div className="relative mt-5 grid grid-cols-3 gap-2">
+                  <div className="rounded-2xl border border-slate-100 p-3 bg-amber-50 text-amber-700">
+                    <div className="text-[10px] font-bold opacity-70">الواجبات</div>
+                    <div className="text-[13px] font-extrabold mt-1">
+                      {homeworkList.filter((h) => h.status !== "submitted").length} متبقي
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 p-3 bg-indigo-50 text-indigo-700">
+                    <div className="text-[10px] font-bold opacity-70">الحصص</div>
+                    <div className="text-[13px] font-extrabold mt-1">{todaySchedule.length} اليوم</div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 p-3 bg-emerald-50 text-emerald-700">
+                    <div className="text-[10px] font-bold opacity-70">نقاط التميز</div>
+                    <div className="text-[13px] font-extrabold mt-1">{studentData.points} نقطة</div>
+                  </div>
+                </div>
               </div>
-              <div className="text-left">
-                <span className="text-xs text-slate-500">رصيد النقاط: </span>
-                <span className="font-bold text-slate-900 text-sm">{studentData.points} نقطة</span>
+
+              {/* بطاقة التقدم الأسبوعي */}
+              <div className="rounded-[26px] bg-gradient-to-br from-[#0f172a] to-[#4338ca] p-5 text-white relative overflow-hidden shadow-soft-lg flex flex-col justify-between">
+                <div className="absolute -left-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
+                <div className="relative">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[13px] font-bold">نشاطك الأسبوعي</h3>
+                    <span className="text-[11px] bg-white/15 px-2.5 py-1 rounded-full font-bold">
+                      {studentData.points > 0 ? `+${studentData.points}` : "منتظم"}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex items-end gap-2 h-[60px]">
+                    {[45, 70, 55, 85, 75, 95, 90].map((h, i) => (
+                      <div key={i} className="flex-1 rounded-full bg-white/15 flex items-end h-full">
+                        <div
+                          className="w-full bg-white rounded-full transition-all duration-500"
+                          style={{ height: `${h}%` }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-[11px] opacity-80">
+                    أكملت معظم المهام بنجاح • استمر نحو القمة!
+                  </div>
+                </div>
+
+                <div className="relative mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[11px]">
+                  <span>مستوى الحضور والانضباط</span>
+                  <span className="font-bold bg-emerald-500/20 text-emerald-200 px-2 py-0.5 rounded-full">
+                    {studentData.attendanceRate}%
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs divide-y divide-slate-100">
-              {todaySchedule.map((p, idx) => (
-                <div key={idx} className="p-3.5 flex items-center justify-between text-xs hover:bg-slate-50">
-                  <div className="flex items-center gap-3">
-                    <span className="w-7 h-7 rounded bg-slate-100 text-slate-800 font-bold flex items-center justify-center">
-                      {p.period}
-                    </span>
-                    <div>
-                      <div className="font-semibold text-slate-900">{p.subject}</div>
-                      <div className="text-[11px] text-slate-500">{p.teacher}</div>
-                    </div>
-                  </div>
-                  <span className="font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                    الحصة {p.period}
+            {/* شبكة جدول اليوم والواجبات */}
+            <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-4">
+              {/* جدول اليوم بنمط البطاقات الملونة */}
+              <div className="rounded-[24px] bg-white border border-slate-200/70 shadow-soft p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-[14px] font-extrabold flex items-center gap-2 text-slate-900">
+                    <Calendar className="w-4 h-4 text-indigo-600" />
+                    <span>جدول حصص اليوم</span>
+                  </h3>
+                  <span className="text-[11px] text-slate-500 font-bold bg-slate-100 px-2.5 py-1 rounded-full">
+                    {todaySchedule.length} حصص
                   </span>
                 </div>
-              ))}
-              {todaySchedule.length === 0 && (
-                <div className="p-6 text-center text-slate-400 text-xs">
-                  لا توجد حصص مجدولة لهذا اليوم.
+
+                <div className="space-y-2.5">
+                  {todaySchedule.map((p, idx) => {
+                    const colors = [
+                      { border: "border-indigo-500", bg: "bg-indigo-50", text: "text-indigo-700" },
+                      { border: "border-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700" },
+                      { border: "border-amber-500", bg: "bg-amber-50", text: "text-amber-700" },
+                      { border: "border-violet-500", bg: "bg-violet-50", text: "text-violet-700" },
+                      { border: "border-rose-500", bg: "bg-rose-50", text: "text-rose-700" },
+                    ];
+                    const c = colors[idx % colors.length];
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex items-center gap-3 p-3.5 rounded-2xl border-r-4 bg-slate-50/70 border border-slate-100 ${c.border}`}
+                      >
+                        <div className="text-[11px] font-extrabold w-14 text-slate-700">
+                          الحصة {p.period}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-bold text-slate-900 truncate">
+                            {p.subject}
+                          </div>
+                          <div className="text-[11px] text-slate-500 truncate">{p.teacher}</div>
+                        </div>
+                        <div className={`w-8 h-8 rounded-xl grid place-items-center ${c.bg} ${c.text}`}>
+                          <BookOpen className="w-4 h-4" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {todaySchedule.length === 0 && (
+                    <div className="p-8 text-center text-slate-400 text-xs">
+                      لا توجد حصص مجدولة لهذا اليوم.
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
+
+              {/* الواجبات السريعة ومواد التفوق */}
+              <div className="space-y-4">
+                {/* بطاقة الواجبات */}
+                <div className="rounded-[24px] bg-white border border-slate-200/70 shadow-soft p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[14px] font-extrabold text-slate-900 flex items-center gap-2">
+                      <FileCheck className="w-4 h-4 text-amber-600" />
+                      <span>الواجبات المطلوب تسليمها</span>
+                    </h3>
+                    <button
+                      onClick={() => setActiveTab("homework")}
+                      className="text-[11px] font-bold text-indigo-600 hover:underline"
+                    >
+                      عرض الكل
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {homeworkList.slice(0, 3).map((hw) => (
+                      <div
+                        key={hw.id}
+                        className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100"
+                      >
+                        <div className="min-w-0 pr-1">
+                          <div className="text-[12.5px] font-bold text-slate-900 truncate">
+                            {hw.title}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            {hw.subject} • موعد: {hw.dueDate}
+                          </div>
+                        </div>
+                        <span
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 ${
+                            hw.status === "submitted"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {hw.status === "submitted" ? "مكتمل ✓" : "مطلوب"}
+                        </span>
+                      </div>
+                    ))}
+                    {homeworkList.length === 0 && (
+                      <div className="p-6 text-center text-slate-400 text-xs">
+                        لا توجد واجبات معلقة حالياً.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* بطاقة التحفيز الشهرية */}
+                <div className="rounded-[24px] bg-gradient-to-l from-amber-50 to-orange-50 border border-amber-200/70 p-4 flex gap-3 items-center shadow-soft">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white grid place-items-center shrink-0 shadow-md">
+                    <Award className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-[13px] font-bold text-slate-900">
+                      أنت ضمن الطلاب المتفوقين هذا الشهر!
+                    </div>
+                    <div className="text-[11px] text-slate-600 mt-0.5">
+                      استمر في مشاركاتك الفعالة وحل الواجبات لتتصدر لوحة الشرف المدرسية.
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
