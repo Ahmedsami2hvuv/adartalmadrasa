@@ -96,7 +96,6 @@ export async function POST(req: NextRequest) {
           };
           reply += `🔹 *الحصة ${item.period}:* ${item.classes?.name || "الصف"} (${item.classes?.section || ""}) - مادة: ${item.subjects?.name || "عام"} [${item.teachers?.profiles?.full_name || ""}]\n`;
         });
-        reply += `\n💡 يمكنك تسجيل الحضور عبر مسح رمز الطالب (QR Code) من لوحة التحكم.`;
       } else {
         reply += `لا توجد حصص مجدولة مسجلة لهذا اليوم في قاعدة البيانات.`;
       }
@@ -105,13 +104,59 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, command: "دروسي_اليوم" });
     }
 
+    // 3. أمر /الواجبات أو /واجباتي للطلاب وأولياء الأمور
+    if (text === "/الواجبات" || text.startsWith("/الواجبات") || text === "/واجباتي" || text.startsWith("/واجباتي")) {
+      const { data: homeworks } = await supabase
+        .from("homeworks")
+        .select(`
+          id,
+          title,
+          description,
+          due_date,
+          classes ( name, section ),
+          subjects ( name ),
+          teachers ( profiles ( full_name ) )
+        `)
+        .order("created_at", { ascending: false })
+        .limit(6);
+
+      let reply = `📚 *أحدث الواجبات المدرسية المقررة:* \n\n`;
+
+      if (homeworks && homeworks.length > 0) {
+        homeworks.forEach((hw: unknown) => {
+          const item = hw as {
+            title: string;
+            description: string;
+            due_date: string;
+            classes?: { name: string; section: string };
+            subjects?: { name: string };
+            teachers?: { profiles?: { full_name: string } };
+          };
+          reply += `━━━━━━━━━━━━━━━━━━\n` +
+            `🏫 *الصف:* ${item.classes?.name || "الصف"} (${item.classes?.section || ""})\n` +
+            `📖 *المادة:* ${item.subjects?.name || "عام"}\n` +
+            `👨‍🏫 *الأستاذ:* ${item.teachers?.profiles?.full_name || "مدرس المادة"}\n` +
+            `📝 *الواجب:* ${item.title}\n` +
+            `📅 *موعد التسليم:* ${item.due_date}\n` +
+            `ℹ️ *التعليمات:* ${item.description}\n`;
+        });
+        reply += `\n💡 يرجى الالتزام بمواعيد التسليم المحددة.`;
+      } else {
+        reply += `لا توجد واجبات منزلية منشورة حالياً في المنظومة.`;
+      }
+
+      await sendTelegramMessage(token, chatId, reply);
+      return NextResponse.json({ ok: true, command: "الواجبات" });
+    }
+
     // رسالة الترحيب وقائمة الأوامر
     if (text === "/start") {
       const welcome = `مرحباً بك في بوت *نظام إدارة المدرسة* 🎓\n\n` +
         `الأوامر المعتمدة:\n` +
-        `▫️ /احصائية_اليوم - كشف فوري بالأرقام الحقيقية للطلاب ونسب الحضور\n` +
-        `▫️ /دروسي_اليوم - استعراض جدول الحصص الفعلي لليوم\n\n` +
-        `جميع الأوامر مربوطة لحظياً بقاعدة بيانات سوبابيس المركزية.`;
+        `▫️ /الواجبات - استعراض أحدث الواجبات المنزلية المقررة ومواعيد تسليمها\n` +
+        `▫️ /دروسي_اليوم - استعراض جدول الحصص الفعلي لليوم\n` +
+        `▫️ /احصائية_اليوم - كشف فوري بالأرقام الحقيقية للطلاب ونسب الحضور\n\n` +
+        `جميع البيانات مربوطة لحظياً بالمنظومة المدرسية وقاعدة بيانات سوبابيس.`;
       await sendTelegramMessage(token, chatId, welcome);
       return NextResponse.json({ ok: true, command: "start" });
     }

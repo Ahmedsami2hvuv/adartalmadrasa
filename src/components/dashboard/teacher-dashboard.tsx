@@ -124,8 +124,19 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
   const [botUsername, setBotUsername] = useState<string>("");
 
   // النوافذ
+  const [currentTeacherId, setCurrentTeacherId] = useState<string>("");
   const [newHwModal, setNewHwModal] = useState(false);
-  const [newHwData, setNewHwData] = useState({ title: "", description: "", dueDate: "" });
+  const [newHwData, setNewHwData] = useState({
+    gradeName: "",
+    classId: "",
+    section: "",
+    subject: "",
+    title: "",
+    description: "",
+    dueDate: "",
+  });
+  const [hwSending, setHwSending] = useState(false);
+  const [hwSuccessMsg, setHwSuccessMsg] = useState("");
   const [newPlanModal, setNewPlanModal] = useState(false);
   const [newPlanData, setNewPlanData] = useState({ title: "", objectives: "", period: 1 });
   const [newBehaviorModal, setNewBehaviorModal] = useState(false);
@@ -164,6 +175,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
         const teacherId = teacherRec?.id;
 
         if (teacherId) {
+          setCurrentTeacherId(teacherId);
           const { data: dbSchedules } = await supabase
             .from("weekly_schedules")
             .select("id, day_of_week, period, class_id, classes(id, name, section), subjects(name)")
@@ -423,21 +435,56 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
 
   const handleAddHomework = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newHwData.title) return;
-    try {
-      const supabase = createClient();
-      await supabase.from("homeworks").insert({
-        title: newHwData.title,
-        class_id: selectedClass || classesList[0]?.id,
-        description: newHwData.description,
-        due_date: newHwData.dueDate || new Date().toISOString().split("T")[0],
-      });
-      loadTeacherData();
-    } catch (e) {
-      console.error(e);
+    if (!newHwData.classId || !newHwData.title.trim() || !newHwData.description.trim()) {
+      alert("يرجى اختيار الصف والشعبة وكتابة عنوان الواجب وتفاصيله!");
+      return;
     }
-    setNewHwData({ title: "", description: "", dueDate: "" });
-    setNewHwModal(false);
+
+    setHwSending(true);
+    try {
+      const res = await fetch("/api/homeworks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          classId: newHwData.classId,
+          className: newHwData.gradeName,
+          section: newHwData.section,
+          subjectName: newHwData.subject,
+          teacherId: currentTeacherId,
+          teacherName: currentUserName || "مدرس المادة",
+          title: newHwData.title.trim(),
+          description: newHwData.description.trim(),
+          dueDate: newHwData.dueDate || new Date().toISOString().split("T")[0],
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "فشل حفظ الواجب");
+      }
+
+      setHwSuccessMsg("تم نشر الواجب بنجاح وإرسال الإشعار للطلاب وأولياء الأمور عبر المنظومة وبوت التيليجرام!");
+      loadTeacherData();
+      setTimeout(() => {
+        setNewHwModal(false);
+        setHwSuccessMsg("");
+        setNewHwData({
+          gradeName: "",
+          classId: "",
+          section: "",
+          subject: "",
+          title: "",
+          description: "",
+          dueDate: "",
+        });
+      }, 1800);
+    } catch (err: unknown) {
+      const error = err as Error;
+      console.error(error);
+      alert("خطأ أثناء نشر الواجب: " + error.message);
+    } finally {
+      setHwSending(false);
+    }
   };
 
   const handleAddLessonPlan = async (e: React.FormEvent) => {
@@ -1287,49 +1334,210 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
 
 
       {/* نافذة إضافة واجب */}
-      {newHwModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-sm p-5 shadow-lg">
-            <h3 className="font-bold text-sm text-slate-900 mb-3">إضافة واجب منزلي</h3>
-            <form onSubmit={handleAddHomework} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-700 mb-1">عنوان الواجب:</label>
-                <input
-                  type="text"
-                  required
-                  value={newHwData.title}
-                  onChange={(e) => setNewHwData({ ...newHwData, title: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
-                />
+      {newHwModal && (() => {
+        // استخراج الصفوف المتاحة
+        const uniqueGradeNames = Array.from(
+          new Set(
+            teacherDetailedSchedules.length > 0
+              ? teacherDetailedSchedules.map((s) => s.gradeName)
+              : classesList.map((c) => c.name.split(" (")[0])
+          )
+        );
+
+        // الشعب المتاحة للصف المختار
+        const availableSections = (
+          teacherDetailedSchedules.length > 0
+            ? teacherDetailedSchedules.filter((s) => s.gradeName === newHwData.gradeName)
+            : classesList.filter((c) => c.name.startsWith(newHwData.gradeName))
+        ).map((item: any) => ({
+          classId: item.classId || item.id,
+          section: item.section || (item.name?.match(/\((.*?)\)/)?.[1] || "أ"),
+          subject: item.subject || "",
+        }));
+
+        const uniqueSections = Array.from(
+          new Map(availableSections.map((s) => [s.classId, s])).values()
+        );
+
+        return (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
+                    <FileCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900">إضافة واجب منزلي جديد</h3>
+                    <p className="text-[11px] text-slate-500">يتم إرسال إشعار فوري للطلاب وأولياء الأمور عبر التيليجرام</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNewHwModal(false)}
+                  className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <div>
-                <label className="block text-slate-700 mb-1">نص الواجب والتعليمات:</label>
-                <textarea
-                  required
-                  rows={3}
-                  value={newHwData.description}
-                  onChange={(e) => setNewHwData({ ...newHwData, description: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
-                />
-              </div>
-              <div>
-                <label className="block text-slate-700 mb-1">موعد التسليم:</label>
-                <input
-                  type="date"
-                  required
-                  value={newHwData.dueDate}
-                  onChange={(e) => setNewHwData({ ...newHwData, dueDate: e.target.value })}
-                  className="w-full px-3 py-2 border rounded border-slate-300"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-3">
-                <Button type="button" variant="ghost" onClick={() => setNewHwModal(false)} className="text-xs h-8">إلغاء</Button>
-                <Button type="submit" className="bg-slate-900 text-white text-xs h-8">نشر الواجب</Button>
-              </div>
-            </form>
+
+              {/* تنبيه النجاح */}
+              {hwSuccessMsg && (
+                <div className="p-3 mb-4 rounded-lg text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{hwSuccessMsg}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleAddHomework} className="space-y-3.5 text-xs">
+                {/* 1. اختيار الصف الدراسي */}
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    1. اختر الصف الدراسي: <span className="text-rose-600">*</span>
+                  </label>
+                  <select
+                    required
+                    value={newHwData.gradeName}
+                    onChange={(e) => {
+                      const selectedGrade = e.target.value;
+                      setNewHwData({
+                        ...newHwData,
+                        gradeName: selectedGrade,
+                        classId: "",
+                        section: "",
+                      });
+                    }}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                  >
+                    <option value="">-- اضغط لاختيار الصف --</option>
+                    {uniqueGradeNames.map((g) => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 2. اختيار الشعبة */}
+                {newHwData.gradeName && (
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      2. اختر الشعبة: <span className="text-rose-600">*</span>
+                    </label>
+                    <select
+                      required
+                      value={newHwData.classId}
+                      onChange={(e) => {
+                        const targetId = e.target.value;
+                        const secObj = uniqueSections.find((s) => s.classId === targetId);
+                        setNewHwData({
+                          ...newHwData,
+                          classId: targetId,
+                          section: secObj?.section || "أ",
+                          subject: secObj?.subject && secObj.subject !== "عام" ? secObj.subject : newHwData.subject,
+                        });
+                      }}
+                      className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                    >
+                      <option value="">-- اضغط لاختيار الشعبة --</option>
+                      {uniqueSections.map((sec) => (
+                        <option key={sec.classId} value={sec.classId}>
+                          شعبة ({sec.section}) {sec.subject ? `- مادة ${sec.subject}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* 3. اسم المادة الدراسية */}
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    المادة الدراسية: <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: الرياضيات، اللغة العربية، العلوم..."
+                    value={newHwData.subject}
+                    onChange={(e) => setNewHwData({ ...newHwData, subject: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                  />
+                </div>
+
+                {/* 4. عنوان الواجب */}
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    عنوان الواجب: <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: حل تمارين الدرس الأول ص 35"
+                    value={newHwData.title}
+                    onChange={(e) => setNewHwData({ ...newHwData, title: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                  />
+                </div>
+
+                {/* 5. تفاصيل الواجب والتعليمات */}
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    تفاصيل الواجب والتعليمات للطلبة: <span className="text-rose-600">*</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    placeholder="اكتب التوجيهات، أرقام المسائل، أو ملاحظات الواجب بالتفصيل..."
+                    value={newHwData.description}
+                    onChange={(e) => setNewHwData({ ...newHwData, description: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                  />
+                </div>
+
+                {/* 6. موعد التسليم */}
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    موعد التسليم والاستحقاق: <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newHwData.dueDate}
+                    onChange={(e) => setNewHwData({ ...newHwData, dueDate: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                  />
+                </div>
+
+                {/* شارة إرسال التيليجرام التلقائية */}
+                <div className="bg-sky-50 border border-sky-200 rounded-lg p-2.5 flex items-center gap-2 text-sky-900 text-[11px]">
+                  <MessageCircle className="w-4 h-4 text-sky-600 shrink-0" />
+                  <span>
+                    سيتم إرسال إشعار فوري وتنبيه للطلاب وأولياء الأمور عبر المنظومة المدرسية وبوت التيليجرام.
+                  </span>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={hwSending}
+                    onClick={() => setNewHwModal(false)}
+                    className="text-xs h-9 px-4"
+                  >
+                    إلغاء
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={hwSending || !newHwData.classId || !newHwData.title.trim()}
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 px-5 gap-1.5"
+                  >
+                    {hwSending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>نشر الواجب وإرسال الإشعار</span>
+                  </Button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* نافذة خطة الدرس */}
       {newPlanModal && (
