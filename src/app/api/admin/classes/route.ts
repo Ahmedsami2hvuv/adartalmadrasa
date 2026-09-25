@@ -111,3 +111,31 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const { oldName, newName, stage } = await req.json();
+    if (!oldName || !newName) {
+      return NextResponse.json({ error: "الاسم القديم والجديد مطلوبان." }, { status: 400 });
+    }
+
+    const adminSupabase = createAdminSupabaseClient();
+    const updateData: { name: string; stage?: string } = { name: newName.trim() };
+    if (stage) updateData.stage = stage;
+
+    const { error } = await adminSupabase
+      .from("classes")
+      .update(updateData)
+      .eq("name", oldName);
+
+    if (error) {
+      const serverSupabase = createServerSupabaseClient();
+      await serverSupabase.from("classes").update(updateData).eq("name", oldName);
+    }
+
+    return NextResponse.json({ success: true, message: `تم تحديث الصف إلى (${newName.trim()}) بنجاح.` });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "حدث خطأ أثناء تعديل الصف.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

@@ -215,3 +215,50 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const { studentId, classId } = await req.json();
+    if (!studentId || !classId) {
+      return NextResponse.json({ error: "معرف الطالب ومعرف الصف مطلوبان." }, { status: 400 });
+    }
+
+    const adminSupabase = createAdminSupabaseClient();
+    const serverSupabase = createServerSupabaseClient();
+    const client = adminSupabase || serverSupabase;
+
+    const { error } = await client.from("students").update({ class_id: classId }).eq("id", studentId);
+    if (error) {
+      throw error;
+    }
+
+    return NextResponse.json({ success: true, message: "تم نقل الطالب بنجاح." });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "تعذر نقل الطالب.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "معرف الطالب مطلوب." }, { status: 400 });
+    }
+
+    const adminSupabase = createAdminSupabaseClient();
+    const serverSupabase = createServerSupabaseClient();
+    const client = adminSupabase || serverSupabase;
+
+    const { error } = await client.from("students").delete().eq("id", id);
+    if (error) {
+      await serverSupabase.from("students").delete().eq("id", id);
+    }
+
+    return NextResponse.json({ success: true, message: "تم حذف الطالب بنجاح." });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "تعذر حذف الطالب.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

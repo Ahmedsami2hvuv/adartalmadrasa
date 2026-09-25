@@ -19,40 +19,66 @@ const DEFAULT_SUBJECTS = [
 export async function GET() {
   try {
     const adminSupabase = createAdminSupabaseClient();
-    let { data: subjects, error } = await adminSupabase
+    const serverSupabase = createServerSupabaseClient();
+    const client = adminSupabase || serverSupabase;
+
+    // 1. جلب المواد من جدول subjects
+    let { data: dbSubjects } = await client
       .from("subjects")
       .select("id, name, stage")
       .order("name");
 
-    if (error) {
-      // تجربة عميل السيرفر كبديل
-      const serverSupabase = createServerSupabaseClient();
-      const fallback = await serverSupabase.from("subjects").select("id, name, stage").order("name");
-      subjects = fallback.data;
-    }
-
-    // إذا كانت قاعدة البيانات فارغة، نضيف المواد الافتراضية
-    if (!subjects || subjects.length === 0) {
-      try {
-        const inserts = DEFAULT_SUBJECTS.map((name) => ({ name, stage: "عام" }));
-        await adminSupabase.from("subjects").upsert(inserts, { onConflict: "name" });
-        const { data: newSubs } = await adminSupabase.from("subjects").select("id, name, stage").order("name");
-        subjects = newSubs;
-      } catch (insertErr) {
-        console.warn("Could not seed default subjects:", insertErr);
+    // 2. جلب المواد المحفوظة احتياطياً في school_settings
+    let customFromSettings: string[] = [];
+    try {
+      const { data: sData } = await client
+        .from("school_settings")
+        .select("custom_subjects")
+        .limit(1)
+        .maybeSingle();
+      if (sData?.custom_subjects && Array.isArray(sData.custom_subjects)) {
+        customFromSettings = sData.custom_subjects;
       }
+    } catch (e) {
+      console.warn("Could not query custom_subjects from settings:", e);
     }
 
-    if (!subjects || subjects.length === 0) {
-      // استخدام UUID حقيقي في حال عدم وجود قاعدة بيانات لتجنب خطأ UUID في الجداول
-      subjects = DEFAULT_SUBJECTS.map((name, i) => ({
+    // تجميع كافة الأسماء بدون تكرار
+    const allNamesMap = new Map<string, { id: string; name: string; stage: string }>();
+
+    // إضافة المواد الافتراضية أولاً
+    DEFAULT_SUBJECTS.forEach((name, i) => {
+      allNamesMap.set(name, {
         id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, "0")}`,
         name,
         stage: "عام",
-      }));
+      });
+    });
+
+    // دمج المواد من school_settings
+    customFromSettings.forEach((name, i) => {
+      if (!allNamesMap.has(name)) {
+        allNamesMap.set(name, {
+          id: `10000000-0000-0000-0000-${String(i + 1).padStart(12, "0")}`,
+          name,
+          stage: "عام",
+        });
+      }
+    });
+
+    // دمج المواد الموجودة فعلياً في جدول subjects بأرقامها الحقيقية
+    if (dbSubjects && dbSubjects.length > 0) {
+      dbSubjects.forEach((sub) => {
+        allNamesMap.set(sub.name, {
+          id: sub.id,
+          name: sub.name,
+          stage: sub.stage || "عام",
+        });
+      });
     }
 
-    return NextResponse.json({ subjects: subjects || [] });
+    const finalList = Array.from(allNamesMap.values());
+    return NextResponse.json({ subjects: finalList });
   } catch (err: unknown) {
     const fallbackSubjects = DEFAULT_SUBJECTS.map((name, i) => ({
       id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, "0")}`,
@@ -73,68 +99,66 @@ export async function POST(req: NextRequest) {
 
     const cleanName = name.trim();
     const adminSupabase = createAdminSupabaseClient();
+    const serverSupabase = createServerSupabaseClient();
+    const client = adminSupabase || serverSupabase;
 
-    // 1. التحقق من عدم التكرار باستخدام maybeSingle (لتجنب خطأ رمي الاستثناء عند عدم وجود صفوف)
-    const { data: existing } = await adminSupabase
-      .from("subjects")
-      .select("id, name, stage")
-      .eq("name", cleanName)
-      .maybeSingle();
+    let finalId = crypto.randomUUID();
 
-    if (existing) {
-      return NextResponse.json({
-        success: true,
-        subject: existing,
-        message: "هذه المادة مسجلة مسبقاً ومتاحة للاستخدام.",
-      });
-    }
-
-    // 2. إدراج المادة الجديدة في سوبابيس
-    let insertedSubject: { id: string; name: string; stage?: string } | null = null;
-
-    const { data: inserted, error: insertError } = await adminSupabase
-      .from("subjects")
-      .insert({
-        name: cleanName,
-        stage: stage || "عام",
-      })
-      .select("id, name, stage")
-      .maybeSingle();
-
-    if (!insertError && inserted) {
-      insertedSubject = inserted;
-    } else {
-      // محاولة الإدراج عبر عميل السيرفر كخيار ثانٍ
-      const serverSupabase = createServerSupabaseClient();
-      const { data: serverInserted, error: serverError } = await serverSupabase
+    // 1. محاولة إدراج أو جلب المادة من جدول subjects
+    try {
+      const { data: existing } = await client
         .from("subjects")
-        .insert({
-          name: cleanName,
-          stage: stage || "عام",
-        })
         .select("id, name, stage")
+        .eq("name", cleanName)
         .maybeSingle();
 
-      if (!serverError && serverInserted) {
-        insertedSubject = serverInserted;
+      if (existing) {
+        finalId = existing.id;
       } else {
-        // إذا كان هناك قيود في الصلاحيات نولد معرف UUID
-        insertedSubject = {
-          id: crypto.randomUUID(),
-          name: cleanName,
-          stage: stage || "عام",
-        };
+        const { data: inserted } = await client
+          .from("subjects")
+          .upsert({ name: cleanName, stage: stage || "عام" }, { onConflict: "name" })
+          .select("id, name, stage")
+          .maybeSingle();
+
+        if (inserted?.id) {
+          finalId = inserted.id;
+        }
       }
+    } catch (e) {
+      console.warn("Subjects table upsert error:", e);
+    }
+
+    // 2. الحفظ الدائم في school_settings.custom_subjects
+    try {
+      const { data: sData } = await client
+        .from("school_settings")
+        .select("custom_subjects")
+        .limit(1)
+        .maybeSingle();
+
+      const currentList: string[] = Array.isArray(sData?.custom_subjects) ? sData.custom_subjects : [];
+      if (!currentList.includes(cleanName)) {
+        currentList.push(cleanName);
+        await client.from("school_settings").upsert({
+          custom_subjects: currentList,
+        });
+      }
+    } catch (e) {
+      console.warn("Settings custom_subjects upsert error:", e);
     }
 
     return NextResponse.json({
       success: true,
-      subject: insertedSubject,
-      message: `تمت إضافة مادة (${cleanName}) بنجاح.`,
+      subject: {
+        id: finalId,
+        name: cleanName,
+        stage: stage || "عام",
+      },
+      message: `تم حفظ مادة (${cleanName}) بنجاح.`,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "حدث خطأ غير متوقع أثناء إضافة المادة.";
-    console.error("Add subject error:", err);
+    const message = err instanceof Error ? err.message : "حدث خطأ أثناء إضافة المادة.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -146,12 +170,33 @@ export async function DELETE(req: NextRequest) {
     const name = searchParams.get("name");
 
     const adminSupabase = createAdminSupabaseClient();
+    const serverSupabase = createServerSupabaseClient();
+    const client = adminSupabase || serverSupabase;
+
+    // حذف من جدول subjects
     if (id) {
-      await adminSupabase.from("subjects").delete().eq("id", id);
-    } else if (name) {
-      await adminSupabase.from("subjects").delete().eq("name", name);
-    } else {
-      return NextResponse.json({ error: "معرف المادة مطلوب." }, { status: 400 });
+      await client.from("subjects").delete().eq("id", id);
+    }
+    if (name) {
+      await client.from("subjects").delete().eq("name", name);
+    }
+
+    // حذف من مصفوفة custom_subjects في school_settings
+    try {
+      const { data: sData } = await client
+        .from("school_settings")
+        .select("custom_subjects")
+        .limit(1)
+        .maybeSingle();
+
+      if (sData?.custom_subjects && Array.isArray(sData.custom_subjects)) {
+        const updated = sData.custom_subjects.filter((subName: string) => subName !== name);
+        await client.from("school_settings").upsert({
+          custom_subjects: updated,
+        });
+      }
+    } catch (e) {
+      console.warn("Error deleting from custom_subjects:", e);
     }
 
     return NextResponse.json({ success: true });
@@ -160,4 +205,3 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

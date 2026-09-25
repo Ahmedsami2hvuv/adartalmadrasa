@@ -13,6 +13,7 @@ ALTER TABLE public.classes DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subjects DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.school_settings DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.school_settings ADD COLUMN IF NOT EXISTS telegram_bot_username TEXT;
+ALTER TABLE public.school_settings ADD COLUMN IF NOT EXISTS custom_subjects TEXT[] DEFAULT '{}';
 
 -- 2. فك قيد الارتباط الصارم من جدول profiles لتمكين حفظ الحسابات فورا
 ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;

@@ -22,6 +22,8 @@ import {
   Copy,
   ExternalLink,
   Link as LinkIcon,
+  ArrowRightLeft,
+  Edit3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
@@ -97,7 +99,29 @@ export function ManagementDashboard({
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
   
   // الصف المختار للجدول الأسبوعي
+  // الصف والشعبة المختارة للجدول الأسبوعي
   const [selectedClassId, setSelectedClassId] = useState<string>("");
+  const [scheduleGrade, setScheduleGrade] = useState<string>("");
+
+  // نافذة تعديل ومسح الصف
+  const [editClassModal, setEditClassModal] = useState(false);
+  const [selectedGroupForEdit, setSelectedGroupForEdit] = useState<{ name: string; stage: string; sections: ClassItem[] } | null>(null);
+  const [editClassName, setEditClassName] = useState("");
+  const [editClassStage, setEditClassStage] = useState("متوسطة");
+  const [editClassLoading, setEditClassLoading] = useState(false);
+
+  // نافذة تفاصيل الشعبة والطلاب بداخلها
+  const [sectionModal, setSectionModal] = useState(false);
+  const [selectedSection, setSelectedSection] = useState<{ id: string; name: string; section: string } | null>(null);
+
+  // نافذة نقل طالب إلى شعبة
+  const [moveStudentModal, setMoveStudentModal] = useState(false);
+  const [studentToMoveId, setStudentToMoveId] = useState("");
+  const [moveLoading, setMoveLoading] = useState(false);
+
+  // نافذة تفاصيل الطالب المنفرد
+  const [studentDetailModal, setStudentDetailModal] = useState(false);
+  const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
 
   const [settings, setSettings] = useState({
     schoolName: "المدرسة النموذجية",
@@ -175,6 +199,7 @@ export function ManagementDashboard({
             }))
           );
           setSelectedClassId((prev) => prev || cData.classes[0].id);
+          setScheduleGrade((prev) => prev || cData.classes[0].name);
         } else {
           // جلب بديل عبر سوبابيس
           const { data: dbClasses } = await supabase.from("classes").select("*").order("name");
@@ -189,6 +214,7 @@ export function ManagementDashboard({
               }))
             );
             setSelectedClassId((prev) => prev || dbClasses[0].id);
+            setScheduleGrade((prev) => prev || dbClasses[0].name);
           }
         }
       } catch (cErr) {
@@ -445,11 +471,84 @@ export function ManagementDashboard({
   // تعديل صف الطالب
   const handleMoveStudent = async (studentId: string, targetClassId: string) => {
     try {
-      const supabase = createClient();
-      await supabase.from("students").update({ class_id: targetClassId }).eq("id", studentId);
-      fetchAllData();
+      const res = await fetch("/api/admin/students", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId, classId: targetClassId }),
+      });
+      if (res.ok) {
+        fetchAllData();
+      }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // حذف طالب
+  const handleDeleteStudent = async (studentId: string, studentName: string) => {
+    if (!confirm(`هل أنت متأكد من حذف قيد الطالب (${studentName}) نهائياً؟`)) return;
+    try {
+      const res = await fetch(`/api/admin/students?id=${studentId}`, { method: "DELETE" });
+      if (res.ok) {
+        fetchAllData();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // تأكيد نقل طالب إلى شعبة
+  const handleConfirmMoveStudent = async () => {
+    if (!studentToMoveId || !selectedSection) return;
+    setMoveLoading(true);
+    try {
+      const res = await fetch("/api/admin/students", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: studentToMoveId,
+          classId: selectedSection.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "تعذر نقل الطالب.");
+      alert(`تم نقل الطالب بنجاح إلى (${selectedSection.name} - الشعبة ${selectedSection.section}).`);
+      setMoveStudentModal(false);
+      setStudentToMoveId("");
+      fetchAllData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ أثناء نقل الطالب.";
+      alert(msg);
+    } finally {
+      setMoveLoading(false);
+    }
+  };
+
+  // تعديل اسم الصف ومرحلته
+  const handleUpdateClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGroupForEdit || !editClassName.trim()) return;
+    setEditClassLoading(true);
+    try {
+      const res = await fetch("/api/admin/classes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          oldName: selectedGroupForEdit.name,
+          newName: editClassName.trim(),
+          stage: editClassStage,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "تعذر تعديل الصف.");
+      alert(data.message || `تم تعديل الصف إلى (${editClassName.trim()}) بنجاح.`);
+      setEditClassModal(false);
+      fetchAllData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ أثناء تعديل الصف.";
+      alert(msg);
+    } finally {
+      setEditClassLoading(false);
     }
   };
 
@@ -863,7 +962,7 @@ export function ManagementDashboard({
                 </Button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {groupedClasses.map((group) => {
                   const totalStudentsInClass = group.sections.reduce(
                     (acc, sec) => acc + students.filter((s) => s.classId === sec.id).length,
@@ -876,11 +975,22 @@ export function ManagementDashboard({
                       className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:shadow-xs transition-shadow flex flex-col justify-between"
                     >
                       <div>
-                        {/* ترويسة الصف */}
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                        {/* ترويسة الصف - قابلة للنقر لفتح خيارات التعديل والمسح */}
+                        <div
+                          onClick={() => {
+                            setSelectedGroupForEdit(group);
+                            setEditClassName(group.name);
+                            setEditClassStage(group.stage);
+                            setEditClassModal(true);
+                          }}
+                          className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3 cursor-pointer group hover:bg-slate-50/80 p-1.5 -mx-1.5 rounded-lg transition"
+                          title="انقر لتعديل اسم الصف أو حذفه"
+                        >
                           <div>
                             <div className="flex items-center gap-2">
-                              <h3 className="font-bold text-slate-900 text-sm">{group.name}</h3>
+                              <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">
+                                {group.name}
+                              </h3>
                               <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold border border-slate-200">
                                 {group.stage}
                               </span>
@@ -890,20 +1000,16 @@ export function ManagementDashboard({
                             </span>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteEntireClass(group.name)}
-                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
-                            title={`حذف صف ${group.name} بكامل شعبه`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-100 group-hover:bg-blue-50 group-hover:text-blue-700 px-2.5 py-1 rounded-md transition">
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span className="font-medium text-[11px]">تعديل / مسح</span>
+                          </div>
                         </div>
 
-                        {/* قائمة الشعب الأبجدية */}
+                        {/* قائمة الشعب الأبجدية - النقر على أي شعبة يفتح طلابها وخيارات الإضافة والنقل */}
                         <div className="space-y-2">
                           <span className="text-[11px] font-semibold text-slate-600 block mb-1.5">
-                            الشعب المسجلة بالتسلسل الأبجدي:
+                            الشعب (انقر على الشعبة لعرض طلابها وإدارتها):
                           </span>
                           <div className="grid grid-cols-2 gap-2">
                             {group.sections.map((sec) => {
@@ -911,25 +1017,25 @@ export function ManagementDashboard({
                               return (
                                 <div
                                   key={sec.id}
-                                  className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200/80 text-xs hover:border-slate-300 transition"
+                                  onClick={() => {
+                                    setSelectedSection({ id: sec.id, name: group.name, section: sec.section });
+                                    setSectionModal(true);
+                                  }}
+                                  className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs hover:border-slate-900 hover:bg-slate-100 cursor-pointer transition shadow-2xs group"
+                                  title="انقر لعرض طلاب الشعبة ونقل أو إضافة طلاب"
                                 >
                                   <div>
-                                    <div className="font-bold text-slate-800">
+                                    <div className="font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
                                       الشعبة ({sec.section})
                                     </div>
                                     <div className="text-[10px] text-slate-500">
-                                      {secStudents} طالب
+                                      {secStudents} طالب مسجل
                                     </div>
                                   </div>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteClass(sec.id, `${group.name} - الشعبة ${sec.section}`)}
-                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-100/50 rounded transition"
-                                    title="حذف الشعبة"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
+                                  <div className="text-[10px] bg-white border border-slate-200 group-hover:border-slate-400 px-2 py-0.5 rounded text-slate-600">
+                                    فتح الشعبة ←
+                                  </div>
                                 </div>
                               );
                             })}
@@ -1108,114 +1214,86 @@ export function ManagementDashboard({
           </div>
         )}
 
-        {/* الجدول الأسبوعي التفاعلي والمواد وأنصبة المدرسين */}
+        {/* الجدول الأسبوعي التفاعلي وأنصبة المدرسين */}
         {activeTab === "schedule" && (
           <div className="space-y-6">
-            {/* 1. قسم إضافة وإدارة المواد الدراسية (فقط اسم المادة) */}
-            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center">
-                    <BookMarked className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">نظام المواد الدراسية المعتمدة</h3>
-                    <p className="text-[11px] text-slate-500">أدخل اسم المادة لإتاحتها فوراً في جدول الحصص وكادر المعلمين</p>
-                  </div>
-                </div>
-              </div>
-
-              {subjectMsg && (
-                <div
-                  className={`p-2.5 mb-3 rounded-lg text-xs flex items-center gap-2 ${
-                    subjectMsg.type === "success"
-                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                      : "bg-rose-50 text-rose-700 border border-rose-200"
-                  }`}
-                >
-                  {subjectMsg.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
-                  <span>{subjectMsg.text}</span>
-                </div>
-              )}
-
-              {/* نموذج إضافة مادة: فقط اسم المادة وزر الإضافة */}
-              <form onSubmit={handleAddSubject} className="flex gap-2 max-w-lg mb-3">
-                <input
-                  type="text"
-                  value={newSubjectName}
-                  onChange={(e) => setNewSubjectName(e.target.value)}
-                  placeholder="اكتب اسم المادة (مثال: الرياضيات، التاريخ، الأحياء، الحاسوب...)"
-                  required
-                  className="flex-1 px-3.5 py-2 border rounded-lg border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
-                />
-                <Button
-                  type="submit"
-                  disabled={subjectLoading}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 px-4 shrink-0 gap-1.5 font-semibold"
-                >
-                  {subjectLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                  <span>إضافة مادة</span>
-                </Button>
-              </form>
-
-              {/* قائمة المواد الحالية مع خيار الحذف السريع */}
-              <div className="pt-2 border-t border-slate-100">
-                <span className="text-[11px] font-bold text-slate-500 block mb-2">المواد المسجلة حالياً بالمدرسة ({subjects.length}):</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {subjects.map((sub) => (
-                    <span
-                      key={sub.id}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200 group"
-                    >
-                      <span>{sub.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteSubject(sub.id, sub.name)}
-                        className="text-slate-400 hover:text-rose-600 transition"
-                        title={`حذف مادة ${sub.name}`}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                  {subjects.length === 0 && (
-                    <span className="text-xs text-slate-400">لا توجد مواد مضافة بعد، اكتب اسم المادة أعلاه واضغط إضافة.</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 2. الجدول الأسبوعي التفاعلي (5 أيام × 5 خانات) */}
-            <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+            {/* محدد الصف الدراسي والشعب التابعة له */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center">
                     <Calendar className="w-5 h-5" />
                   </div>
                   <div>
                     <h2 className="text-sm font-bold text-slate-900">جدول الحصص الأسبوعي (5 أيام × 5 حصص)</h2>
-                    <p className="text-xs text-slate-500">اختر الصف وانقر على أي خانة لتحديد اسم الحصة والمعلم فوراً</p>
+                    <p className="text-xs text-slate-500">اختر الصف أولاً، ثم حدد الشعبة وانقر على أي خانة لتثبيت المادة والمعلم</p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-700">الصف والشعبة:</span>
-                  <select
-                    value={selectedClassId}
-                    onChange={(e) => setSelectedClassId(e.target.value)}
-                    className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-800 shadow-2xs"
-                  >
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.section})
-                      </option>
-                    ))}
-                  </select>
+                {/* اختيار الصف أولاً */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-700">الصف الدراسي:</label>
+                    <select
+                      value={
+                        scheduleGrade ||
+                        classes.find((c) => c.id === selectedClassId)?.name ||
+                        (groupedClasses[0]?.name ?? "")
+                      }
+                      onChange={(e) => {
+                        const newGrade = e.target.value;
+                        setScheduleGrade(newGrade);
+                        const group = groupedClasses.find((g) => g.name === newGrade);
+                        if (group && group.sections.length > 0) {
+                          setSelectedClassId(group.sections[0].id);
+                        }
+                      }}
+                      className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-800 shadow-2xs"
+                    >
+                      {groupedClasses.map((g) => (
+                        <option key={g.name} value={g.name}>
+                          {g.name} ({g.stage})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* ظهور الشعب التابعة للصف المختار */}
+                  <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-600 px-1.5">الشعبة:</span>
+                    {(
+                      groupedClasses.find(
+                        (g) =>
+                          g.name ===
+                          (scheduleGrade ||
+                            classes.find((c) => c.id === selectedClassId)?.name ||
+                            groupedClasses[0]?.name)
+                      )?.sections || []
+                    ).map((sec) => {
+                      const isActive = sec.id === selectedClassId;
+                      return (
+                        <button
+                          key={sec.id}
+                          type="button"
+                          onClick={() => setSelectedClassId(sec.id)}
+                          className={`px-3 py-1 text-xs rounded-md font-bold transition ${
+                            isActive
+                              ? "bg-slate-900 text-white shadow-2xs"
+                              : "bg-white text-slate-700 hover:bg-slate-200"
+                          }`}
+                        >
+                          الشعبة {sec.section}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
+            </div>
 
               {/* شبكة الـ 5 أيام × 5 خانات */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+              <div className="space-y-3">
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
                 <div className="overflow-x-auto">
                   <table className="w-full text-center border-collapse">
                     <thead>
@@ -1411,9 +1489,83 @@ export function ManagementDashboard({
         )}
 
 
-        {/* الإعدادات وبوت تيليجرام */}
+        {/* الإعدادات وبوت تيليجرام والمواد الدراسية */}
         {activeTab === "settings" && (
-          <div className="max-w-xl bg-white border border-slate-200 rounded-lg p-6 space-y-4 shadow-xs">
+          <div className="space-y-6 max-w-2xl">
+            {/* قسم إدارة المواد الدراسية */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                  <BookMarked className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">نظام المواد الدراسية المعتمدة</h3>
+                  <p className="text-[11px] text-slate-500">إضافة وتثبيت المواد الدراسية للمدرسة لربطها بجدول الحصص والمعلمين بشكل دائم</p>
+                </div>
+              </div>
+
+              {subjectMsg && (
+                <div
+                  className={`p-2.5 mb-3 rounded-lg text-xs flex items-center gap-2 ${
+                    subjectMsg.type === "success"
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : "bg-rose-50 text-rose-700 border border-rose-200"
+                  }`}
+                >
+                  {subjectMsg.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+                  <span>{subjectMsg.text}</span>
+                </div>
+              )}
+
+              {/* نموذج إضافة مادة: فقط اسم المادة وزر الإضافة */}
+              <form onSubmit={handleAddSubject} className="flex gap-2 max-w-lg mb-3">
+                <input
+                  type="text"
+                  value={newSubjectName}
+                  onChange={(e) => setNewSubjectName(e.target.value)}
+                  placeholder="اكتب اسم المادة (مثال: الرياضيات، التاريخ، الأحياء، الحاسوب...)"
+                  required
+                  className="flex-1 px-3.5 py-2 border rounded-lg border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                />
+                <Button
+                  type="submit"
+                  disabled={subjectLoading}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 px-4 shrink-0 gap-1.5 font-semibold"
+                >
+                  {subjectLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  <span>إضافة مادة</span>
+                </Button>
+              </form>
+
+              {/* قائمة المواد الحالية مع خيار الحذف السريع */}
+              <div className="pt-2 border-t border-slate-100">
+                <span className="text-[11px] font-bold text-slate-500 block mb-2">المواد المسجلة حالياً بالمدرسة ({subjects.length}):</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {subjects.map((sub) => (
+                    <span
+                      key={sub.id}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200 group"
+                    >
+                      <span>{sub.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSubject(sub.id, sub.name)}
+                        className="text-slate-400 hover:text-rose-600 transition"
+                        title={`حذف مادة ${sub.name}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  {subjects.length === 0 && (
+                    <span className="text-xs text-slate-400">لا توجد مواد مضافة بعد، اكتب اسم المادة أعلاه واضغط إضافة.</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* إعدادات المدرسة وبوت تيليجرام */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4 shadow-xs">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">اسم المدرسة:</label>
               <input
@@ -1485,6 +1637,7 @@ export function ManagementDashboard({
                 حفظ التعديلات
               </Button>
             </div>
+          </div>
           </div>
         )}
       </main>
@@ -1940,6 +2093,356 @@ export function ManagementDashboard({
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* نافذة تعديل ومسح الصف الدراسي */}
+      {editClassModal && selectedGroupForEdit && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-bold text-sm text-slate-900">إدارة صف: {selectedGroupForEdit.name}</h3>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 font-semibold text-slate-600">
+                {selectedGroupForEdit.sections.length} شعب
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">يمكنك تعديل اسم هذا الصف أو مسحه بالكامل مع كافة شعبه</p>
+
+            <form onSubmit={handleUpdateClass} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">اسم الصف الدراسي:</label>
+                <input
+                  type="text"
+                  required
+                  value={editClassName}
+                  onChange={(e) => setEditClassName(e.target.value)}
+                  placeholder="مثال: الأول المتوسط أو الخامس العلمي"
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">المرحلة الدراسية:</label>
+                <select
+                  value={editClassStage}
+                  onChange={(e) => setEditClassStage(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white"
+                >
+                  <option value="ابتدائية">ابتدائية</option>
+                  <option value="متوسطة">متوسطة</option>
+                  <option value="إعدادية">إعدادية / ثانوية</option>
+                </select>
+              </div>
+
+              <div className="pt-2 flex flex-col gap-2">
+                <Button
+                  type="submit"
+                  disabled={editClassLoading}
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                >
+                  {editClassLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Edit3 className="w-3.5 h-3.5" />}
+                  <span>حفظ تعديل الصف</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    const confirmDel = window.confirm(
+                      `هل أنت متأكد تماماً من رغبتك في حذف صف "${selectedGroupForEdit.name}" وجميع شعبه؟ سيتم حذف جميع بيانات الشعب المرتبطة.`
+                    );
+                    if (confirmDel) {
+                      setEditClassModal(false);
+                      handleDeleteEntireClass(selectedGroupForEdit.name);
+                    }
+                  }}
+                  className="w-full border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 text-xs h-8 gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>مسح الصف بكافة شعبه</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setEditClassModal(false)}
+                  className="w-full text-xs h-8 text-slate-500"
+                >
+                  إلغاء
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة تفاصيل الشعبة وقائمة طلابها مع إمكانية الإضافة والنقل */}
+      {sectionModal && selectedSection && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            {/* الترويسة */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 gap-3">
+              <div>
+                <h3 className="font-bold text-base text-slate-900">
+                  {selectedSection.name} - الشعبة ({selectedSection.section})
+                </h3>
+                <p className="text-xs text-slate-500">
+                  إجمالي الطلاب في هذه الشعبة: {students.filter((s) => s.classId === selectedSection.id).length} طالب
+                </p>
+              </div>
+
+              {/* أزرار الإجراءات على الشعبة */}
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGradeName(selectedSection.name);
+                    setNewStudentData({
+                      name: "",
+                      classId: selectedSection.id,
+                      parentName: "",
+                      parentPhone: "",
+                    });
+                    setSectionModal(false);
+                    setNewStudentModal(true);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>إضافة طالب للشعبة</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={() => setMoveStudentModal(true)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1"
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                  <span>نقل طالب لهنا</span>
+                </Button>
+
+                <button
+                  type="button"
+                  onClick={() => setSectionModal(false)}
+                  className="text-slate-400 hover:text-slate-700 p-1 text-base leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* محتوى الطلاب داخل الشعبة */}
+            <div className="overflow-y-auto flex-1 py-4 space-y-2">
+              {students.filter((s) => s.classId === selectedSection.id).length === 0 ? (
+                <div className="text-center py-10 bg-slate-50 border border-dashed border-slate-200 rounded-xl">
+                  <Users className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-700">لا يوجد طلاب مسجلون في هذه الشعبة حتى الآن</p>
+                  <p className="text-[11px] text-slate-500 mb-3">يمكنك إضافة طالب جديد أو نقل طالب من صف/شعبة أخرى</p>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setSelectedGradeName(selectedSection.name);
+                      setNewStudentData({
+                        name: "",
+                        classId: selectedSection.id,
+                        parentName: "",
+                        parentPhone: "",
+                      });
+                      setSectionModal(false);
+                      setNewStudentModal(true);
+                    }}
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8"
+                  >
+                    <Plus className="w-3.5 h-3.5 ml-1" />
+                    إضافة أول طالب لهذه الشعبة
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {students
+                    .filter((s) => s.classId === selectedSection.id)
+                    .map((stu) => (
+                      <div
+                        key={stu.id}
+                        className="bg-slate-50 border border-slate-200 hover:border-slate-400 rounded-lg p-3 flex items-center justify-between gap-2 transition"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-bold text-xs text-slate-900 truncate">{stu.name}</h4>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            ولي الأمر: {stu.parentName} ({stu.parentPhone})
+                          </p>
+                          <span className="inline-block mt-1 font-mono text-[9px] bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-600">
+                            {stu.qrCode}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-col gap-1 shrink-0">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              setViewingStudent(stu);
+                              setStudentDetailModal(true);
+                            }}
+                            className="bg-white hover:bg-slate-200 text-slate-900 border border-slate-200 text-[10px] h-7 px-2"
+                          >
+                            التفاصيل
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteStudent(stu.id, stu.name)}
+                            className="text-[10px] text-rose-600 hover:underline text-center"
+                          >
+                            حذف
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            {/* التذييل */}
+            <div className="pt-3 border-t border-slate-200 flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSectionModal(false)}
+                className="text-xs h-8"
+              >
+                إغلاق
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة نقل طالب إلى الشعبة الحالية */}
+      {moveStudentModal && selectedSection && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="font-bold text-sm text-slate-900 mb-1">
+              نقل طالب إلى {selectedSection.name} - الشعبة ({selectedSection.section})
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              اختر الطالب من أي صف أو شعبة أخرى ليتم تحويل قيده إلى هذه الشعبة فوراً
+            </p>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">اختر الطالب لنقله:</label>
+                <select
+                  value={studentToMoveId}
+                  onChange={(e) => setStudentToMoveId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white"
+                >
+                  <option value="">-- اضغط لاختيار الطالب --</option>
+                  {students
+                    .filter((s) => s.classId !== selectedSection.id)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} (حالياً في: {s.className})
+                      </option>
+                    ))}
+                </select>
+                {students.filter((s) => s.classId !== selectedSection.id).length === 0 && (
+                  <p className="text-[11px] text-amber-600 mt-1">لا يوجد طلاب في صفوف أو شعب أخرى لنقلهم.</p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={moveLoading}
+                  onClick={() => {
+                    setMoveStudentModal(false);
+                    setStudentToMoveId("");
+                  }}
+                  className="text-xs h-8"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  type="button"
+                  disabled={moveLoading || !studentToMoveId}
+                  onClick={handleConfirmMoveStudent}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                >
+                  {moveLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>تأكيد النقل الآن</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة تفاصيل الطالب الكاملة */}
+      {studentDetailModal && viewingStudent && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
+                  {viewingStudent.name.charAt(0)}
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">{viewingStudent.name}</h3>
+                  <span className="text-[11px] text-slate-500 font-mono">الباركود: {viewingStudent.qrCode}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStudentDetailModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div>
+                  <span className="text-[10px] text-slate-500 block">الصف والشعبة:</span>
+                  <span className="font-bold text-slate-800">{viewingStudent.className}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">نسبة الحضور:</span>
+                  <span className="font-bold text-emerald-600">{viewingStudent.attendanceRate}%</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">ولي الأمر:</span>
+                  <span className="font-bold text-slate-800">{viewingStudent.parentName}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block">رقم هاتف ولي الأمر:</span>
+                  <span className="font-mono text-slate-800" dir="ltr">{viewingStudent.parentPhone}</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <Button
+                  type="button"
+                  onClick={() => handleGenerateStudentPDF(viewingStudent)}
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>طباعة بطاقة الطالب وتقرير المتابعة</span>
+                </Button>
+
+                {viewingStudent.parentPhone && viewingStudent.parentPhone !== "-" && (
+                  <a
+                    href={`https://wa.me/${parseAndFormatPhone(viewingStudent.parentPhone).whatsappNumber}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-1.5 w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs h-8 rounded-md font-semibold transition"
+                  >
+                    <span>مراسلة ولي الأمر عبر واتساب ↗</span>
+                  </a>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
