@@ -32,7 +32,7 @@ interface StudentAttendance {
   studentId: string;
   studentName: string;
   qrCode: string;
-  status: "present" | "absent" | "late";
+  status: "present" | "absent" | "late" | "excused";
 }
 
 interface TeacherScheduleClass {
@@ -330,16 +330,32 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
           .eq("date", today)
           .eq("period", currentPeriod);
 
+        // جلب الإجازات المعتمدة لليوم
+        const { data: leavesToday } = await supabase
+          .from("leave_requests")
+          .select("student_id")
+          .lte("start_date", today)
+          .gte("end_date", today)
+          .eq("status", "approved");
+
+        const leaveStudentIds = new Set((leavesToday || []).map((l: any) => l.student_id));
+
         if (studentsData) {
           setAttendanceList(
             studentsData.map((s: unknown) => {
               const row = s as { id: string; profiles?: { full_name: string } };
               const att = attendancesToday?.find((a) => a.student_id === row.id);
+              let initialStatus: "present" | "absent" | "late" | "excused" = "present";
+              if (att?.status) {
+                initialStatus = att.status as any;
+              } else if (leaveStudentIds.has(row.id)) {
+                initialStatus = "excused";
+              }
               return {
                 studentId: row.id,
                 studentName: row.profiles?.full_name || "طالب",
                 qrCode: "",
-                status: (att?.status as "present" | "absent" | "late") || "present",
+                status: initialStatus,
               };
             })
           );
@@ -351,7 +367,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
     loadClassStudents();
   }, [selectedAttendanceClassId, currentPeriod]);
 
-  const updateAttendanceInDB = async (studentId: string, status: "present" | "absent" | "late") => {
+  const updateAttendanceInDB = async (studentId: string, status: "present" | "absent" | "late" | "excused") => {
     if (!selectedAttendanceClassId) return;
     try {
       const supabase = createClient();
@@ -368,7 +384,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
     }
   };
 
-  const toggleAttendanceStatus = async (studentId: string, status: "present" | "absent" | "late") => {
+  const toggleAttendanceStatus = async (studentId: string, status: "present" | "absent" | "late" | "excused") => {
     setAttendanceList((prev) =>
       prev.map((s) => (s.studentId === studentId ? { ...s, status } : s))
     );
@@ -975,7 +991,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
                         كشف حضور طلاب: {selectedGradeName} - شعبة ({selectedSection})
                       </h4>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        الحصة: {currentPeriod} • الإجمالي: {attendanceList.length} طالب • (حاضر: {presentCount} • غائب: {absentCount} • متأخر: {lateCount})
+                        الحصة: {currentPeriod} • الإجمالي: {attendanceList.length} طالب • (حاضر: {presentCount} • غائب: {absentCount} • متأخر: {lateCount} • مجاز: {attendanceList.filter((s) => s.status === "excused").length})
                       </p>
                     </div>
 
@@ -1027,13 +1043,18 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
                                   <Clock className="w-3 h-3" /> متأخر
                                 </span>
                               )}
+                              {stu.status === "excused" && (
+                                <span className="inline-flex items-center gap-1 text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs font-bold border border-blue-200">
+                                  <CheckCircle className="w-3 h-3" /> مجاز رسمياً
+                                </span>
+                              )}
                             </td>
                             <td className="p-3 text-center">
                               <div className="inline-flex items-center gap-1">
                                 <button
                                   type="button"
                                   onClick={() => toggleAttendanceStatus(stu.studentId, "present")}
-                                  className={`px-2.5 py-1 rounded text-xs font-bold transition border ${
+                                  className={`px-2 py-1 rounded text-xs font-bold transition border ${
                                     stu.status === "present"
                                       ? "bg-emerald-700 text-white border-emerald-700 shadow-2xs"
                                       : "bg-white hover:bg-slate-50 text-slate-700 border-slate-300"
@@ -1044,7 +1065,7 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
                                 <button
                                   type="button"
                                   onClick={() => toggleAttendanceStatus(stu.studentId, "absent")}
-                                  className={`px-2.5 py-1 rounded text-xs font-bold transition border ${
+                                  className={`px-2 py-1 rounded text-xs font-bold transition border ${
                                     stu.status === "absent"
                                       ? "bg-rose-700 text-white border-rose-700 shadow-2xs"
                                       : "bg-white hover:bg-rose-50 text-rose-700 border-slate-300"
@@ -1055,13 +1076,24 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
                                 <button
                                   type="button"
                                   onClick={() => toggleAttendanceStatus(stu.studentId, "late")}
-                                  className={`px-2.5 py-1 rounded text-xs font-bold transition border ${
+                                  className={`px-2 py-1 rounded text-xs font-bold transition border ${
                                     stu.status === "late"
                                       ? "bg-amber-600 text-white border-amber-600 shadow-2xs"
                                       : "bg-white hover:bg-amber-50 text-amber-700 border-slate-300"
                                   }`}
                                 >
                                   متأخر
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAttendanceStatus(stu.studentId, "excused")}
+                                  className={`px-2 py-1 rounded text-xs font-bold transition border ${
+                                    stu.status === "excused"
+                                      ? "bg-blue-700 text-white border-blue-700 shadow-2xs"
+                                      : "bg-white hover:bg-blue-50 text-blue-700 border-slate-300"
+                                  }`}
+                                >
+                                  مجاز
                                 </button>
                               </div>
                             </td>

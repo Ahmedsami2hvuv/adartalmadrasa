@@ -7,6 +7,7 @@ import {
   UserPlus,
   BookOpen,
   Calendar,
+  CalendarCheck,
   CreditCard,
   BarChart3,
   Settings,
@@ -101,7 +102,7 @@ export function ManagementDashboard({
   currentUserName?: string;
 }) {
   const [activeTab, setActiveTab] = useState<
-    "overview" | "teachers" | "classes" | "students" | "schedule" | "settings"
+    "overview" | "teachers" | "classes" | "students" | "schedule" | "leaves" | "settings"
   >("overview");
 
   const [loadingData, setLoadingData] = useState(true);
@@ -195,6 +196,31 @@ export function ManagementDashboard({
 
   // عرض تفاصيل صف دراسي محدد عند النقر عليه
   const [selectedGradeForView, setSelectedGradeForView] = useState<string | null>(null);
+
+  // نظام الإجازات (طلاب ومعلمين)
+  const [leavesTab, setLeavesTab] = useState<"students" | "teachers">("students");
+  const [studentLeaves, setStudentLeaves] = useState<any[]>([]);
+  const [teacherLeaves, setTeacherLeaves] = useState<any[]>([]);
+  const [leavesLoading, setLeavesLoading] = useState(false);
+  const [leaveMsg, setLeaveMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // نموذج إجازة طالب
+  const [leaveStudentSearch, setLeaveStudentSearch] = useState("");
+  const [leaveGradeFilter, setLeaveGradeFilter] = useState("");
+  const [leaveSectionFilter, setLeaveSectionFilter] = useState("");
+  const [selectedStudentForLeave, setSelectedStudentForLeave] = useState<Student | null>(null);
+  const [studentLeaveStartDate, setStudentLeaveStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [studentLeaveEndDate, setStudentLeaveEndDate] = useState(new Date().toISOString().split("T")[0]);
+  const [studentLeaveReason, setStudentLeaveReason] = useState("إجازة مرضية");
+  const [studentLeaveNotes, setStudentLeaveNotes] = useState("");
+
+  // نموذج إجازة معلم
+  const [leaveTeacherSearch, setLeaveTeacherSearch] = useState("");
+  const [selectedTeacherForLeave, setSelectedTeacherForLeave] = useState<Teacher | null>(null);
+  const [teacherLeaveStartDate, setTeacherLeaveStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [teacherLeaveEndDate, setTeacherLeaveEndDate] = useState(new Date().toISOString().split("T")[0]);
+  const [teacherLeaveReason, setTeacherLeaveReason] = useState("ظرف عائلي طارئ");
+  const [teacherLeaveNotes, setTeacherLeaveNotes] = useState("");
 
   // جلب كافة البيانات الفعلية من سوبابيس ومسارات السيرفر
   const fetchAllData = useCallback(async () => {
@@ -319,6 +345,17 @@ export function ManagementDashboard({
       } catch (schErr) {
         console.warn("Schedules API fetch fallback:", schErr);
       }
+      // 7. الإجازات (طلاب ومعلمين)
+      try {
+        const leavesRes = await fetch("/api/admin/leaves");
+        const leavesData = await leavesRes.json();
+        if (leavesRes.ok) {
+          setStudentLeaves(leavesData.studentLeaves || []);
+          setTeacherLeaves(leavesData.teacherLeaves || []);
+        }
+      } catch (lErr) {
+        console.warn("Leaves API fetch fallback:", lErr);
+      }
     } catch (err) {
       console.warn("Fetch data from Supabase fallback:", err);
     } finally {
@@ -329,6 +366,113 @@ export function ManagementDashboard({
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
+
+  // تحديث قائمة الإجازات بشكل منفصل وسريع
+  const fetchLeaves = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/leaves");
+      const data = await res.json();
+      if (res.ok) {
+        setStudentLeaves(data.studentLeaves || []);
+        setTeacherLeaves(data.teacherLeaves || []);
+      }
+    } catch (e) {
+      console.warn("Could not fetch leaves:", e);
+    }
+  }, []);
+
+  // حفظ إجازة طالب وتثبيتها في الحضور
+  const handleSaveStudentLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudentForLeave) {
+      setLeaveMsg({ type: "error", text: "يرجى تحديد الطالب المراد منحه إجازة." });
+      return;
+    }
+    setLeavesLoading(true);
+    setLeaveMsg(null);
+    try {
+      const res = await fetch("/api/admin/leaves", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "student",
+          targetId: selectedStudentForLeave.id,
+          targetName: selectedStudentForLeave.name,
+          className: selectedStudentForLeave.className,
+          startDate: studentLeaveStartDate,
+          endDate: studentLeaveEndDate,
+          reason: studentLeaveReason,
+          notes: studentLeaveNotes,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "تعذر حفظ إجازة الطالب.");
+      setLeaveMsg({ type: "success", text: data.message || "تم تسجيل إجازة الطالب وتثبيته كمجاز في سجل الحضور بنجاح!" });
+      setSelectedStudentForLeave(null);
+      setLeaveStudentSearch("");
+      setStudentLeaveNotes("");
+      fetchLeaves();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ أثناء حفظ الإجازة.";
+      setLeaveMsg({ type: "error", text: msg });
+    } finally {
+      setLeavesLoading(false);
+    }
+  };
+
+  // حفظ إجازة معلم
+  const handleSaveTeacherLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTeacherForLeave) {
+      setLeaveMsg({ type: "error", text: "يرجى تحديد المعلم المراد منحه إجازة." });
+      return;
+    }
+    setLeavesLoading(true);
+    setLeaveMsg(null);
+    try {
+      const res = await fetch("/api/admin/leaves", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "teacher",
+          targetId: selectedTeacherForLeave.id,
+          targetName: selectedTeacherForLeave.name,
+          subject: selectedTeacherForLeave.subject,
+          startDate: teacherLeaveStartDate,
+          endDate: teacherLeaveEndDate,
+          reason: teacherLeaveReason,
+          notes: teacherLeaveNotes,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "تعذر توثيق إجازة المعلم.");
+      setLeaveMsg({ type: "success", text: data.message || "تم توثيق إجازة المعلم بنجاح!" });
+      setSelectedTeacherForLeave(null);
+      setLeaveTeacherSearch("");
+      setTeacherLeaveNotes("");
+      fetchLeaves();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ أثناء حفظ الإجازة.";
+      setLeaveMsg({ type: "error", text: msg });
+    } finally {
+      setLeavesLoading(false);
+    }
+  };
+
+  // إلغاء إجازة
+  const handleDeleteLeave = async (leaveId: string, type: "student" | "teacher") => {
+    if (!confirm("هل أنت متأكد من رغبتك في إلغاء هذه الإجازة؟")) return;
+    try {
+      const res = await fetch(`/api/admin/leaves?id=${leaveId}&type=${type}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchLeaves();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // 1. إضافة معلم عبر مسار السيرفر الآمن
   const handleAddTeacher = async (e: React.FormEvent) => {
@@ -848,6 +992,7 @@ export function ManagementDashboard({
             { id: "classes", label: "الصفوف والشعب", icon: BookOpen, count: classes.length },
             { id: "students", label: "سجل الطلاب", icon: School, count: students.length },
             { id: "schedule", label: "الجدول الأسبوعي", icon: Calendar, count: schedules.length },
+            { id: "leaves", label: "نظام الإجازات", icon: CalendarCheck, count: studentLeaves.length + teacherLeaves.length },
             { id: "settings", label: "الإعدادات والنظام", icon: Settings, count: null },
           ].map((item) => {
             const Icon = item.icon;
@@ -936,6 +1081,7 @@ export function ManagementDashboard({
                 { id: "classes", label: "الصفوف والشعب", icon: BookOpen, count: classes.length },
                 { id: "students", label: "سجل الطلاب", icon: School, count: students.length },
                 { id: "schedule", label: "الجدول الأسبوعي", icon: Calendar, count: schedules.length },
+                { id: "leaves", label: "نظام الإجازات", icon: CalendarCheck, count: studentLeaves.length + teacherLeaves.length },
                 { id: "settings", label: "الإعدادات والنظام", icon: Settings, count: null },
               ].map((item) => {
                 const Icon = item.icon;
@@ -1919,6 +2065,546 @@ export function ManagementDashboard({
           </div>
         )}
 
+
+        {/* نظام الإجازات (طلاب ومعلمين) */}
+        {activeTab === "leaves" && (
+          <div className="space-y-5">
+            {/* الترويسة الرئيسية والتبديل بين إجازات الطلاب وإجازات المدرسين */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+                  <CalendarCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">نظام الإجازات المدرسية</h2>
+                  <p className="text-xs text-slate-500">
+                    منح وتوثيق الإجازات للطلاب والمدرسين والربط الآلي مع سجل الحضور والغياب
+                  </p>
+                </div>
+              </div>
+
+              {/* أزرار التبديل الرئيسية */}
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLeavesTab("students");
+                    setLeaveMsg(null);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                    leavesTab === "students"
+                      ? "bg-white text-slate-900 shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <School className="w-3.5 h-3.5" />
+                  <span>إجازات الطلاب</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-mono">
+                    {studentLeaves.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLeavesTab("teachers");
+                    setLeaveMsg(null);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                    leavesTab === "teachers"
+                      ? "bg-white text-slate-900 shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>إجازات المدرسين</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-mono">
+                    {teacherLeaves.length}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* رسالة النجاح أو الخطأ */}
+            {leaveMsg && (
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 animate-in fade-in duration-150 ${
+                  leaveMsg.type === "success"
+                    ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                    : "bg-rose-50 text-rose-800 border border-rose-200"
+                }`}
+              >
+                {leaveMsg.type === "success" ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                )}
+                <span className="font-semibold">{leaveMsg.text}</span>
+              </div>
+            )}
+
+            {/* 1. قسم إجازات الطلاب */}
+            {leavesTab === "students" && (
+              <div className="space-y-5">
+                {/* صندوق تسجيل إجازة لطالب */}
+                <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-2xs space-y-4">
+                  <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-900">منح وتوثيق إجازة لطالب</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        سيتم تثبيت الطالب آلياً بحالة &quot;مجاز رسمياً&quot; في كشف الحضور لدى المدرس والإدارة
+                      </p>
+                    </div>
+                    <span className="text-[10px] px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-bold border border-blue-200">
+                      ربط آلي مع الحضور
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleSaveStudentLeave} className="space-y-4 text-xs">
+                    {/* اختيار الطالب: إما بالبحث بالاسم أو عبر الصفوف والشعب */}
+                    <div className="space-y-2">
+                      <label className="font-bold text-slate-800 block text-xs">
+                        تحديد الطالب (ابحث بالاسم أو اختر الصف والشعبة إذا لم تكن تعرف اسمه):
+                      </label>
+
+                      {/* إذا كان هناك طالب محدد */}
+                      {selectedStudentForLeave ? (
+                        <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-bold text-xs">
+                              {selectedStudentForLeave.name.charAt(0)}
+                            </div>
+                            <div>
+                              <span className="font-bold text-slate-900 text-xs block">
+                                {selectedStudentForLeave.name}
+                              </span>
+                              <span className="text-[11px] text-emerald-800">
+                                {selectedStudentForLeave.className} • ولي الأمر: {selectedStudentForLeave.parentName}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStudentForLeave(null)}
+                            className="text-xs text-emerald-800 hover:text-rose-700 font-bold px-2 py-1 rounded bg-white border border-emerald-200 transition"
+                          >
+                            تغيير الطالب ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                          {/* الخيار الأول: البحث بالاسم */}
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-bold text-slate-700 block">
+                              1. ابحث باسم الطالب مباشرة:
+                            </label>
+                            <div className="relative">
+                              <Search className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                              <input
+                                type="text"
+                                value={leaveStudentSearch}
+                                onChange={(e) => setLeaveStudentSearch(e.target.value)}
+                                placeholder="اكتب اسم الطالب هنا..."
+                                className="w-full pl-3 pr-9 py-2 border rounded-lg border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
+                              />
+                            </div>
+
+                            {leaveStudentSearch.trim() && (
+                              <div className="max-h-36 overflow-y-auto bg-white border border-slate-200 rounded-lg divide-y divide-slate-100 shadow-sm mt-1">
+                                {students
+                                  .filter((s) => s.name.toLowerCase().includes(leaveStudentSearch.toLowerCase()))
+                                  .slice(0, 8)
+                                  .map((stu) => (
+                                    <div
+                                      key={stu.id}
+                                      onClick={() => {
+                                        setSelectedStudentForLeave(stu);
+                                        setLeaveStudentSearch("");
+                                      }}
+                                      className="p-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs"
+                                    >
+                                      <span className="font-bold text-slate-900">{stu.name}</span>
+                                      <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                        {stu.className}
+                                      </span>
+                                    </div>
+                                  ))}
+                                {students.filter((s) => s.name.toLowerCase().includes(leaveStudentSearch.toLowerCase())).length === 0 && (
+                                  <div className="p-2.5 text-center text-slate-400 text-[11px]">
+                                    لا يوجد طالب مطابق لهذا الاسم.
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* الخيار الثاني: تصفية بالصف والشعبة */}
+                          <div className="space-y-1.5 border-t md:border-t-0 md:border-r border-slate-200 pt-2 md:pt-0 md:pr-3">
+                            <label className="text-[11px] font-bold text-slate-700 block">
+                              2. أو اختر الصف والشعبة لاختيار الطالب:
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <select
+                                value={leaveGradeFilter}
+                                onChange={(e) => {
+                                  setLeaveGradeFilter(e.target.value);
+                                  setLeaveSectionFilter("");
+                                }}
+                                className="w-full p-2 border rounded-lg border-slate-300 bg-white text-xs text-slate-800"
+                              >
+                                <option value="">-- اختر الصف --</option>
+                                {groupedClasses.map((g) => (
+                                  <option key={g.name} value={g.name}>
+                                    {g.name}
+                                  </option>
+                                ))}
+                              </select>
+
+                              <select
+                                value={leaveSectionFilter}
+                                disabled={!leaveGradeFilter}
+                                onChange={(e) => setLeaveSectionFilter(e.target.value)}
+                                className="w-full p-2 border rounded-lg border-slate-300 bg-white text-xs text-slate-800 disabled:bg-slate-100"
+                              >
+                                <option value="">-- الشعبة --</option>
+                                {classes
+                                  .filter((c) => c.name === leaveGradeFilter)
+                                  .map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      شعبة ({c.section})
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+
+                            {/* قائمة طلاب الشعبة المحددة */}
+                            {leaveSectionFilter && (
+                              <div className="mt-2 space-y-1">
+                                <label className="text-[10px] text-slate-500 block">انقر على الطالب لمنحه إجازة:</label>
+                                <div className="max-h-28 overflow-y-auto bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
+                                  {students
+                                    .filter((s) => s.classId === leaveSectionFilter)
+                                    .map((stu) => (
+                                      <div
+                                        key={stu.id}
+                                        onClick={() => setSelectedStudentForLeave(stu)}
+                                        className="p-1.5 px-2 hover:bg-blue-50 cursor-pointer flex items-center justify-between text-xs"
+                                      >
+                                        <span className="font-semibold text-slate-900">{stu.name}</span>
+                                        <span className="text-[10px] font-bold text-blue-600">اختيار ←</span>
+                                      </div>
+                                    ))}
+                                  {students.filter((s) => s.classId === leaveSectionFilter).length === 0 && (
+                                    <div className="p-2 text-center text-slate-400 text-[10px]">
+                                      لا يوجد طلاب مسجلون في هذه الشعبة بعد.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* تفاصيل التواريخ والسبب */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">تاريخ بداية الإجازة:</label>
+                        <input
+                          type="date"
+                          required
+                          value={studentLeaveStartDate}
+                          onChange={(e) => setStudentLeaveStartDate(e.target.value)}
+                          className="w-full px-3 py-1.5 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">تاريخ نهاية الإجازة:</label>
+                        <input
+                          type="date"
+                          required
+                          value={studentLeaveEndDate}
+                          onChange={(e) => setStudentLeaveEndDate(e.target.value)}
+                          className="w-full px-3 py-1.5 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">سبب الإجازة:</label>
+                        <select
+                          value={studentLeaveReason}
+                          onChange={(e) => setStudentLeaveReason(e.target.value)}
+                          className="w-full px-3 py-1.5 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white text-xs"
+                        >
+                          <option value="إجازة مرضية">إجازة مرضية</option>
+                          <option value="ظرف عائلي طارئ">ظرف عائلي طارئ</option>
+                          <option value="سفر مع الأسرة">سفر مع الأسرة</option>
+                          <option value="عذر رسمي معتمد">عذر رسمي معتمد</option>
+                          <option value="أخرى">أخرى</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">ملاحظات توضيحية:</label>
+                        <input
+                          type="text"
+                          value={studentLeaveNotes}
+                          onChange={(e) => setStudentLeaveNotes(e.target.value)}
+                          placeholder="تقرير طبي، إشعار ولي الأمر..."
+                          className="w-full px-3 py-1.5 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* زر الحفظ */}
+                    <div className="flex justify-end pt-2">
+                      <Button
+                        type="submit"
+                        disabled={leavesLoading || !selectedStudentForLeave}
+                        className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 gap-1.5 shadow-xs"
+                      >
+                        {leavesLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarCheck className="w-3.5 h-3.5" />}
+                        <span>{leavesLoading ? "جارٍ التثبيت..." : "تسجيل الإجازة وتثبيتها في الحضور"}</span>
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* سجل الإجازات المسجلة للطلاب */}
+                <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-slate-700" />
+                      <h3 className="font-bold text-sm text-slate-900">سجل إجازات الطلاب المعتمدة</h3>
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500">
+                      إجمالي {studentLeaves.length} إجازة مسجلة
+                    </span>
+                  </div>
+
+                  {studentLeaves.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      لا توجد إجازات مسجلة للطلاب حالياً. يمكنك منح إجازة لطالب من النموذج أعلاه.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold">
+                          <tr>
+                            <th className="p-3">اسم الطالب</th>
+                            <th className="p-3">الصف والشعبة</th>
+                            <th className="p-3">من تاريخ</th>
+                            <th className="p-3">إلى تاريخ</th>
+                            <th className="p-3">سبب الإجازة</th>
+                            <th className="p-3 text-center">الحالة في الحضور</th>
+                            <th className="p-3 text-center">إلغاء الإجازة</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {studentLeaves.map((leave) => (
+                            <tr key={leave.id} className="hover:bg-slate-50/70 transition">
+                              <td className="p-3 font-bold text-slate-900">{leave.studentName}</td>
+                              <td className="p-3 text-slate-700">{leave.className}</td>
+                              <td className="p-3 font-mono text-slate-600" dir="ltr">{leave.startDate}</td>
+                              <td className="p-3 font-mono text-slate-600" dir="ltr">{leave.endDate}</td>
+                              <td className="p-3 text-slate-700 font-medium">{leave.reason}</td>
+                              <td className="p-3 text-center">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                  <CheckCircle2 className="w-3 h-3" /> مجاز رسمياً
+                                </span>
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteLeave(leave.id, "student")}
+                                  className="text-rose-600 hover:text-rose-800 text-[11px] font-bold hover:underline"
+                                >
+                                  إلغاء
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 2. قسم إجازات المدرسين */}
+            {leavesTab === "teachers" && (
+              <div className="space-y-5">
+                {/* صندوق تسجيل إجازة لمعلم */}
+                <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-2xs space-y-4">
+                  <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-900">منح وتوثيق إجازة لمدرس</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        تسجيل وتوثيق عذر وإجازة عضو الكادر التدريسي في السجلات المعتمدة
+                      </p>
+                    </div>
+                    <span className="text-[10px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-bold border border-slate-200">
+                      كادر المدرسة
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleSaveTeacherLeave} className="space-y-4 text-xs">
+                    {/* اختيار المعلم */}
+                    <div className="space-y-1.5">
+                      <label className="font-bold text-slate-800 block text-xs">اختر المدرس المراد منحه إجازة:</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <select
+                          value={selectedTeacherForLeave?.id || ""}
+                          onChange={(e) => {
+                            const found = teachers.find((t) => t.id === e.target.value);
+                            setSelectedTeacherForLeave(found || null);
+                          }}
+                          className="w-full p-2 border rounded-lg border-slate-300 bg-white text-xs text-slate-900 font-semibold"
+                        >
+                          <option value="">-- اضغط لاختيار المدرس من القائمة --</option>
+                          {teachers.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} (مادة: {t.subject})
+                            </option>
+                          ))}
+                        </select>
+
+                        {selectedTeacherForLeave && (
+                          <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-800">{selectedTeacherForLeave.name}</span>
+                            <span className="text-slate-500 font-mono" dir="ltr">{selectedTeacherForLeave.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* تفاصيل التواريخ والسبب */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">من تاريخ:</label>
+                        <input
+                          type="date"
+                          required
+                          value={teacherLeaveStartDate}
+                          onChange={(e) => setTeacherLeaveStartDate(e.target.value)}
+                          className="w-full px-3 py-1.5 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">إلى تاريخ:</label>
+                        <input
+                          type="date"
+                          required
+                          value={teacherLeaveEndDate}
+                          onChange={(e) => setTeacherLeaveEndDate(e.target.value)}
+                          className="w-full px-3 py-1.5 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">نوع الإجازة:</label>
+                        <select
+                          value={teacherLeaveReason}
+                          onChange={(e) => setTeacherLeaveReason(e.target.value)}
+                          className="w-full px-3 py-1.5 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white text-xs"
+                        >
+                          <option value="إجازة مرضية">إجازة مرضية</option>
+                          <option value="ظرف عائلي طارئ">ظرف عائلي طارئ</option>
+                          <option value="إجازة رسمية / زمنية">إجازة رسمية / زمنية</option>
+                          <option value="مهمة عمل تربوية">مهمة عمل تربوية</option>
+                          <option value="أخرى">أخرى</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 font-semibold mb-1">ملاحظات الإدارة:</label>
+                        <input
+                          type="text"
+                          value={teacherLeaveNotes}
+                          onChange={(e) => setTeacherLeaveNotes(e.target.value)}
+                          placeholder="تأمين الحصص الشاغرة..."
+                          className="w-full px-3 py-1.5 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* زر الحفظ */}
+                    <div className="flex justify-end pt-2">
+                      <Button
+                        type="submit"
+                        disabled={leavesLoading || !selectedTeacherForLeave}
+                        className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 gap-1.5 shadow-xs"
+                      >
+                        {leavesLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarCheck className="w-3.5 h-3.5" />}
+                        <span>{leavesLoading ? "جارٍ الحفظ..." : "توثيق إجازة المدرس"}</span>
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* سجل إجازات المدرسين */}
+                <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-slate-700" />
+                      <h3 className="font-bold text-sm text-slate-900">سجل إجازات المدرسين</h3>
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500">
+                      إجمالي {teacherLeaves.length} إجازة مسجلة
+                    </span>
+                  </div>
+
+                  {teacherLeaves.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      لا توجد إجازات مسجلة للمدرسين حالياً.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold">
+                          <tr>
+                            <th className="p-3">اسم المدرس</th>
+                            <th className="p-3">المادة الدراسية</th>
+                            <th className="p-3">من تاريخ</th>
+                            <th className="p-3">إلى تاريخ</th>
+                            <th className="p-3">نوع الإجازة والسبب</th>
+                            <th className="p-3">ملاحظات</th>
+                            <th className="p-3 text-center">إلغاء الإجازة</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {teacherLeaves.map((leave) => (
+                            <tr key={leave.id} className="hover:bg-slate-50/70 transition">
+                              <td className="p-3 font-bold text-slate-900">{leave.teacherName}</td>
+                              <td className="p-3 text-slate-700">{leave.subject}</td>
+                              <td className="p-3 font-mono text-slate-600" dir="ltr">{leave.startDate}</td>
+                              <td className="p-3 font-mono text-slate-600" dir="ltr">{leave.endDate}</td>
+                              <td className="p-3 text-slate-800 font-medium">{leave.reason}</td>
+                              <td className="p-3 text-slate-500">{leave.notes || "-"}</td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteLeave(leave.id, "teacher")}
+                                  className="text-rose-600 hover:text-rose-800 text-[11px] font-bold hover:underline"
+                                >
+                                  إلغاء
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* الإعدادات وبوت تيليجرام والمواد الدراسية */}
         {activeTab === "settings" && (
