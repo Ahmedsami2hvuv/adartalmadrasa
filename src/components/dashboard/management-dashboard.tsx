@@ -990,129 +990,92 @@ export function ManagementDashboard({
           {activeTab === "overview" && (
             <div className="space-y-6">
               {/* ترويسة القيادة والترحيب بالمدير */}
-              <div className="bg-gradient-to-l from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl p-6 sm:p-7 shadow-sm relative overflow-hidden">
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
-                  <div>
-                    <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-white/10 backdrop-blur-xs text-[11px] font-semibold text-emerald-400 mb-2 border border-white/10">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>منظومة الإدارة الذكية السحابية متصلة بالكامل</span>
-                    </div>
-                    <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-                      مرحباً بك، {userRole === "director" ? "المدير العام" : "معاون المدير"} 👋
-                    </h1>
-                    <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
-                      هنا مركز القيادة والتحكم الشامل بمدرستك. يمكنك متابعة الكادر والطلاب والحصص الدراسية وإنجاز العمليات اليومية بنقرة واحدة.
-                    </p>
+              <div className="bg-gradient-to-l from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl p-5 sm:p-7 shadow-sm relative overflow-hidden">
+                <div className="relative z-10">
+                  <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-white/10 backdrop-blur-xs text-[11px] font-semibold text-emerald-400 mb-2 border border-white/10">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>منظومة الإدارة الذكية السحابية متصلة بالكامل</span>
                   </div>
-
-                  {/* أزرار الإجراءات السريعة */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      onClick={() => {
-                        setTeacherMsg(null);
-                        setNewTeacherModal(true);
-                      }}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-9 px-3.5 gap-1.5 shadow-sm font-bold"
-                    >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>إضافة معلم</span>
-                    </Button>
-
-                    <Button
-                      onClick={() => {
-                        setStudentMsg(null);
-                        setSelectedGradeName("");
-                        setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
-                        setNewStudentModal(true);
-                      }}
-                      className="bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs h-9 px-3.5 gap-1.5 font-bold"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>تسجيل طالب</span>
-                    </Button>
-
-                    <Button
-                      onClick={() => setActiveTab("schedule")}
-                      className="bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs h-9 px-3.5 gap-1.5 font-bold"
-                    >
-                      <Calendar className="w-3.5 h-3.5" />
-                      <span>الجدول الأسبوعي</span>
-                    </Button>
-                  </div>
+                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+                    مرحباً بك، {userRole === "director" ? "المدير العام" : "معاون المدير"} 👋
+                  </h1>
+                  <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
+                    هنا مركز القيادة والتحكم الشامل بمدرستك. يمكنك متابعة الكادر والطلاب والحصص الدراسية وإنجاز العمليات اليومية بنقرة واحدة.
+                  </p>
                 </div>
               </div>
 
-              {/* بطاقات المؤشرات الإحصائية الرئيسية (KPIs) الفاخرة */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* بطاقات المؤشرات الإحصائية الرئيسية: كل 2 بجانب بعض دائماً */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
                 {/* 1. الطلاب */}
                 <div
                   onClick={() => setActiveTab("students")}
-                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
+                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-3.5 sm:p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-bold text-slate-500">إجمالي الطلاب</span>
-                    <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] sm:text-xs font-bold text-slate-500">إجمالي الطلاب</span>
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition shrink-0">
                       <School className="w-4 h-4" />
                     </div>
                   </div>
-                  <div className="text-3xl font-black text-slate-900">{students.length}</div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
-                    <span>متوسط الشعب: {classes.length > 0 ? Math.round(students.length / classes.length) : 0} طالب</span>
-                    <span className="text-blue-600 font-bold">عرض السجل ←</span>
+                  <div className="text-2xl sm:text-3xl font-black text-slate-900">{students.length}</div>
+                  <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
+                    <span className="truncate">متوسط: {classes.length > 0 ? Math.round(students.length / classes.length) : 0} طالب</span>
+                    <span className="text-blue-600 font-bold shrink-0">السجل ←</span>
                   </div>
                 </div>
 
                 {/* 2. الكادر التدريسي */}
                 <div
                   onClick={() => setActiveTab("teachers")}
-                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
+                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-3.5 sm:p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-bold text-slate-500">الكادر التدريسي</span>
-                    <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] sm:text-xs font-bold text-slate-500">الكادر التدريسي</span>
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition shrink-0">
                       <Users className="w-4 h-4" />
                     </div>
                   </div>
-                  <div className="text-3xl font-black text-slate-900">{teachers.length}</div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
-                    <span>حسابات مفعلة بالروابط</span>
-                    <span className="text-emerald-600 font-bold">عرض الكادر ←</span>
+                  <div className="text-2xl sm:text-3xl font-black text-slate-900">{teachers.length}</div>
+                  <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
+                    <span className="truncate">مدرسين مفعلين</span>
+                    <span className="text-emerald-600 font-bold shrink-0">الكادر ←</span>
                   </div>
                 </div>
 
                 {/* 3. الصفوف والشعب */}
                 <div
                   onClick={() => setActiveTab("classes")}
-                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
+                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-3.5 sm:p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-bold text-slate-500">الشعب الدراسية</span>
-                    <div className="w-9 h-9 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center group-hover:bg-violet-600 group-hover:text-white transition">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] sm:text-xs font-bold text-slate-500">الشعب الدراسية</span>
+                    <div className="w-8 h-8 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center group-hover:bg-violet-600 group-hover:text-white transition shrink-0">
                       <BookOpen className="w-4 h-4" />
                     </div>
                   </div>
-                  <div className="text-3xl font-black text-slate-900">{classes.length}</div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
-                    <span>موزعة على {groupedClasses.length} صفوف</span>
-                    <span className="text-violet-600 font-bold">إدارة الشعب ←</span>
+                  <div className="text-2xl sm:text-3xl font-black text-slate-900">{classes.length}</div>
+                  <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
+                    <span className="truncate">{groupedClasses.length} صفوف</span>
+                    <span className="text-violet-600 font-bold shrink-0">الشعب ←</span>
                   </div>
                 </div>
 
                 {/* 4. الحصص والجدول الأسبوعي */}
                 <div
                   onClick={() => setActiveTab("schedule")}
-                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
+                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-3.5 sm:p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-bold text-slate-500">الحصص المجدولة</span>
-                    <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] sm:text-xs font-bold text-slate-500">الحصص المجدولة</span>
+                    <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition shrink-0">
                       <Calendar className="w-4 h-4" />
                     </div>
                   </div>
-                  <div className="text-3xl font-black text-slate-900">{schedules.length}</div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
-                    <span>خطة 5 أيام × 5 حصص</span>
-                    <span className="text-amber-600 font-bold">تعديل الجدول ←</span>
+                  <div className="text-2xl sm:text-3xl font-black text-slate-900">{schedules.length}</div>
+                  <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
+                    <span className="truncate">5 أيام × 5 حصص</span>
+                    <span className="text-amber-600 font-bold shrink-0">الجدول ←</span>
                   </div>
                 </div>
               </div>
