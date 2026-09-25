@@ -8,7 +8,13 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 }
 
-export function InstallPWA({ variant = "button" }: { variant?: "button" | "banner" | "badge" }) {
+export function InstallPWA({
+  variant = "button",
+  className = "",
+}: {
+  variant?: "button" | "banner" | "badge";
+  className?: string;
+}) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
@@ -67,9 +73,9 @@ export function InstallPWA({ variant = "button" }: { variant?: "button" | "banne
 
   if (isInstalled) {
     return (
-      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 text-xs font-semibold">
+      <div className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 ${className}`}>
         <CheckCircle className="w-4 h-4" />
-        <span>التطبيق مُثبت</span>
+        <span>التطبيق مُثبت بنجاح</span>
       </div>
     );
   }
@@ -78,7 +84,7 @@ export function InstallPWA({ variant = "button" }: { variant?: "button" | "banne
     return (
       <button
         onClick={handleInstallClick}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold transition"
+        className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition border border-slate-200 ${className}`}
       >
         <Smartphone className="w-3.5 h-3.5" />
         <span>تثبيت التطبيق</span>

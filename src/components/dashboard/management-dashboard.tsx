@@ -872,8 +872,8 @@ export function ManagementDashboard({
 
         {/* أسفل القائمة الجانبية: تثبيت التطبيق وتسجيل الخروج */}
         <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
-          <InstallPWA variant="badge" />
-          <LogoutButton />
+          <InstallPWA variant="badge" className="w-full" />
+          <LogoutButton className="w-full" />
         </div>
       </aside>
 
@@ -890,10 +890,9 @@ export function ManagementDashboard({
           </button>
           <span className="font-bold text-xs text-slate-900">{settings.schoolName}</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <InstallPWA variant="badge" />
-          <LogoutButton />
-        </div>
+        <span className="text-[10px] px-2.5 py-1 rounded-md font-bold bg-slate-100 text-slate-800 border border-slate-200">
+          {userRole === "director" ? "المدير العام" : "معاون المدير"}
+        </span>
       </div>
 
       {/* Drawer القائمة الجانبية للهواتف المحمولة */}
@@ -959,8 +958,9 @@ export function ManagementDashboard({
               })}
             </nav>
 
-            <div className="p-3 border-t border-slate-100 space-y-2">
-              <LogoutButton />
+            <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
+              <InstallPWA variant="badge" className="w-full" />
+              <LogoutButton className="w-full" />
             </div>
           </div>
         </div>
