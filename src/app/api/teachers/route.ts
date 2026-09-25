@@ -209,3 +209,80 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { id, name, phone, subject } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "معرف المعلم مطلوب." }, { status: 400 });
+    }
+
+    const adminSupabase = createAdminSupabaseClient();
+    const serverSupabase = createServerSupabaseClient();
+    const client = adminSupabase || serverSupabase;
+
+    // 1. البحث عن المعلم لمعرفة profile_id
+    const { data: teacherRec } = await client.from("teachers").select("id, profile_id").eq("id", id).maybeSingle();
+    const profileId = teacherRec?.profile_id || id;
+
+    // 2. تحديث الاسم ورقم الهاتف في profiles
+    if (name || phone) {
+      const updatePayload: Record<string, string> = {};
+      if (name) updatePayload.full_name = name.trim();
+      if (phone) {
+        const parsed = parseAndFormatPhone(phone);
+        updatePayload.phone = parsed.whatsappNumber ? `+${parsed.whatsappNumber}` : phone;
+      }
+
+      await client.from("profiles").update(updatePayload).eq("id", profileId);
+    }
+
+    // 3. تحديث المادة في جدول teachers
+    if (subject) {
+      await client.from("teachers").update({ subject: subject.trim() }).eq("id", id);
+      await client.from("teachers").update({ specialization: subject.trim() }).eq("id", id);
+    }
+
+    return NextResponse.json({ success: true, message: "تم تحديث بيانات المعلم بنجاح." });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "تعذر تحديث بيانات المعلم.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "معرف المعلم مطلوب." }, { status: 400 });
+    }
+
+    const adminSupabase = createAdminSupabaseClient();
+    const serverSupabase = createServerSupabaseClient();
+    const client = adminSupabase || serverSupabase;
+
+    // 1. فك ارتباط المعلم بالجدول الأسبوعي
+    await client.from("schedules").update({ teacher_id: null }).eq("teacher_id", id);
+
+    // 2. معرفة profile_id قبل الحذف
+    const { data: teacherRec } = await client.from("teachers").select("id, profile_id").eq("id", id).maybeSingle();
+    const profileId = teacherRec?.profile_id || id;
+
+    // 3. حذف من جدول teachers
+    await client.from("teachers").delete().eq("id", id);
+
+    // 4. حذف من جدول profiles إن وجد
+    if (profileId) {
+      await client.from("profiles").delete().eq("id", profileId);
+    }
+
+    return NextResponse.json({ success: true, message: "تم حذف المعلم بنجاح." });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "تعذر حذف المعلم.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

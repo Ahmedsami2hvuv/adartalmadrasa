@@ -24,6 +24,16 @@ import {
   Link as LinkIcon,
   ArrowRightLeft,
   Edit3,
+  Menu,
+  X,
+  Search,
+  MessageCircle,
+  Layers,
+  Activity,
+  TrendingUp,
+  Clock,
+  ChevronRight,
+  Phone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallPWA } from "@/components/install-pwa";
@@ -122,6 +132,17 @@ export function ManagementDashboard({
   // نافذة تفاصيل الطالب المنفرد
   const [studentDetailModal, setStudentDetailModal] = useState(false);
   const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
+
+  // القائمة الجانبية في الشاشات الصغيرة
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // إدارة تفاصيل وتعديل المعلم
+  const [teacherDetailModal, setTeacherDetailModal] = useState(false);
+  const [selectedTeacherForView, setSelectedTeacherForView] = useState<Teacher | null>(null);
+  const [teacherSearch, setTeacherSearch] = useState("");
+  const [editTeacherModal, setEditTeacherModal] = useState(false);
+  const [editTeacherData, setEditTeacherData] = useState({ id: "", name: "", phone: "", subject: "" });
+  const [editTeacherLoading, setEditTeacherLoading] = useState(false);
 
   const [settings, setSettings] = useState({
     schoolName: "المدرسة النموذجية",
@@ -353,6 +374,69 @@ export function ManagementDashboard({
     const targetNumber = parsed.whatsappNumber || teacher.phone.replace(/[^0-9]/g, "");
     window.open(`https://wa.me/${targetNumber}?text=${message}`, "_blank");
   };
+
+  // حذف معلم
+  const handleDeleteTeacher = async (teacherId: string, teacherName: string) => {
+    if (!confirm(`هل أنت متأكد من حذف المعلم (${teacherName}) وجميع ارتباطاته بالجدول؟`)) return;
+    try {
+      const res = await fetch(`/api/teachers?id=${teacherId}`, { method: "DELETE" });
+      if (res.ok) {
+        setTeacherDetailModal(false);
+        setSelectedTeacherForView(null);
+        fetchAllData();
+      } else {
+        alert("تعذر حذف المعلم، يرجى المحاولة لاحقاً.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("حدث خطأ أثناء حذف المعلم.");
+    }
+  };
+
+  // تعديل بيانات المعلم
+  const handleUpdateTeacher = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTeacherData.id || !editTeacherData.name.trim()) return;
+    setEditTeacherLoading(true);
+    try {
+      const res = await fetch("/api/teachers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editTeacherData),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "تعذر تحديث بيانات المعلم.");
+      setEditTeacherModal(false);
+      if (selectedTeacherForView && selectedTeacherForView.id === editTeacherData.id) {
+        setSelectedTeacherForView((prev) =>
+          prev ? { ...prev, name: editTeacherData.name, subject: editTeacherData.subject, phone: editTeacherData.phone } : null
+        );
+      }
+      fetchAllData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ أثناء التعديل.";
+      alert(msg);
+    } finally {
+      setEditTeacherLoading(false);
+    }
+  };
+
+  // استخراج الصفوف والشعب وحصص المعلم من الجدول الأسبوعي
+  const getTeacherStats = useCallback(
+    (teacherId: string) => {
+      const teacherSchedules = schedules.filter((s) => s.teacherId === teacherId);
+      const uniqueClassesMap: Record<string, number> = {};
+      teacherSchedules.forEach((s) => {
+        uniqueClassesMap[s.className] = (uniqueClassesMap[s.className] || 0) + 1;
+      });
+      return {
+        totalPeriods: teacherSchedules.length,
+        classesList: Object.entries(uniqueClassesMap).map(([name, count]) => ({ name, count })),
+        schedules: teacherSchedules,
+      };
+    },
+    [schedules]
+  );
 
   // إرسال واتساب لولي الأمر مع رابط الدخول المباشر لمتابعة ابنه
   const sendWhatsAppToParent = (student: Student) => {
@@ -710,180 +794,554 @@ export function ManagementDashboard({
   }, [classes]);
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col selection:bg-slate-800 selection:text-white pb-10" dir="rtl">
-      {/* الرأس الإداري */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-15 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row selection:bg-slate-800 selection:text-white" dir="rtl">
+      {/* 1. القائمة الجانبية للشاشات الكبيرة (Desktop Sidebar) */}
+      <aside className="hidden md:flex flex-col w-64 bg-white border-l border-slate-200 shrink-0 sticky top-0 h-screen z-30 shadow-xs">
+        {/* رأس القائمة الجانبية: شعار وهوية المدرسة */}
+        <div className="p-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
               <School className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-bold text-slate-900">
-                  {userRole === "director" ? "لوحة المدير العام" : "لوحة معاون المدير"}
-                </h1>
-                <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                  {!currentUserName || currentUserName.includes("%") || /^[A-Fa-f0-9%]+$/.test(currentUserName)
-                    ? userRole === "director"
-                      ? "المدير العام"
-                      : "معاون المدير"
-                    : currentUserName}
-                </span>
-                {loadingData && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+            <div className="min-w-0">
+              <h2 className="text-xs font-bold text-slate-900 truncate">{settings.schoolName}</h2>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[10px] text-slate-500 font-medium">العام: {settings.academicYear}</span>
               </div>
-              <p className="text-[11px] text-slate-500">{settings.schoolName}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <InstallPWA variant="badge" />
-            <LogoutButton />
+          {/* بطاقة هوية المدير */}
+          <div className="mt-3 p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-500 block">الحساب الحالي:</span>
+              <span className="text-xs font-bold text-slate-900 truncate block">
+                {!currentUserName || currentUserName.includes("%") || /^[A-Fa-f0-9%]+$/.test(currentUserName)
+                  ? userRole === "director"
+                    ? "المدير العام"
+                    : "معاون المدير"
+                  : currentUserName}
+              </span>
+            </div>
+            <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-200 shrink-0">
+              نشط ومصرح
+            </span>
           </div>
         </div>
 
-        {/* شريط التبويبات */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-1 border-t border-slate-100 py-1 scrollbar-none">
+        {/* روابط التنقل الرئيسية في القائمة الجانبية */}
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {[
-            { id: "overview", label: "نظرة عامة", icon: BarChart3 },
-            { id: "teachers", label: `الكادر التدريسي (${teachers.length})`, icon: Users },
-            { id: "classes", label: `الصفوف والشعب (${classes.length})`, icon: BookOpen },
-            { id: "students", label: `سجل الطلاب (${students.length})`, icon: School },
-            { id: "schedule", label: "الجدول الأسبوعي", icon: Calendar },
-            { id: "settings", label: "الإعدادات والنظام", icon: Settings },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            { id: "overview", label: "النظرة العامة", icon: BarChart3, count: null },
+            { id: "teachers", label: "الكادر التدريسي", icon: Users, count: teachers.length },
+            { id: "classes", label: "الصفوف والشعب", icon: BookOpen, count: classes.length },
+            { id: "students", label: "سجل الطلاب", icon: School, count: students.length },
+            { id: "schedule", label: "الجدول الأسبوعي", icon: Calendar, count: schedules.length },
+            { id: "settings", label: "الإعدادات والنظام", icon: Settings, count: null },
+          ].map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
             return (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition whitespace-nowrap ${
+                key={item.id}
+                onClick={() => setActiveTab(item.id as typeof activeTab)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                   isActive
                     ? "bg-slate-900 text-white shadow-xs"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{tab.label}</span>
+                <div className="flex items-center gap-2.5">
+                  <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-500"}`} />
+                  <span>{item.label}</span>
+                </div>
+                {item.count !== null && (
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                      isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {item.count}
+                  </span>
+                )}
               </button>
             );
           })}
+        </nav>
+
+        {/* أسفل القائمة الجانبية: تثبيت التطبيق وتسجيل الخروج */}
+        <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
+          <InstallPWA variant="badge" />
+          <LogoutButton />
         </div>
-      </header>
+      </aside>
 
-      {/* المحتوى */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 w-full mt-6 flex-1">
-        {/* إشعار نسخ الرابط المباشر */}
-        {copySuccess && (
-          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between shadow-xs animate-in fade-in duration-200">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>{copySuccess}</span>
-            </div>
-            <button
-              onClick={() => setCopySuccess(null)}
-              className="text-emerald-700 hover:text-emerald-900 text-xs px-2"
-            >
-              ✕
-            </button>
-          </div>
-        )}
+      {/* 2. شريط علوي للهواتف المحمولة (Mobile Header) */}
+      <div className="md:hidden sticky top-0 z-40 bg-white border-b border-slate-200 px-4 h-14 flex items-center justify-between shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-lg hover:bg-slate-100 text-slate-700"
+            title="فتح القائمة الجانبية"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="font-bold text-xs text-slate-900">{settings.schoolName}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <InstallPWA variant="badge" />
+          <LogoutButton />
+        </div>
+      </div>
 
-        {/* النظرة العامة */}
-        {activeTab === "overview" && (
-          <div className="space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs font-semibold text-slate-500 mb-1">الطلاب المسجلين</div>
-                <div className="text-2xl font-bold text-slate-900">{students.length}</div>
-                <div className="text-[11px] text-slate-600 mt-1">بيانات حية ومربوطة بسوبابيس</div>
+      {/* Drawer القائمة الجانبية للهواتف المحمولة */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div
+            className="fixed inset-0 bg-black/50 transition-opacity"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="relative w-64 max-w-[80vw] bg-white h-full flex flex-col z-10 shadow-2xl animate-in slide-in-from-right duration-200">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <School className="w-5 h-5 text-slate-900" />
+                <span className="font-bold text-xs text-slate-900">القائمة الإدارية</span>
               </div>
-
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs font-semibold text-slate-500 mb-1">الكادر التدريسي</div>
-                <div className="text-2xl font-bold text-slate-900">{teachers.length}</div>
-                <div className="text-[11px] text-slate-600 mt-1">حسابات نشطة ومهيأة للروابط المباشرة</div>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs font-semibold text-slate-500 mb-1">الشعب الدراسية</div>
-                <div className="text-2xl font-bold text-slate-900">{classes.length}</div>
-                <div className="text-[11px] text-slate-600 mt-1">فصول موزعة على المراحل</div>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="text-xs font-semibold text-slate-500 mb-1">الحصص المجدولة</div>
-                <div className="text-2xl font-bold text-slate-900">{schedules.length}</div>
-                <div className="text-[11px] text-slate-600 mt-1">موزعة بدون تضارب زمني</div>
-              </div>
-            </div>
-
-            <div className="bg-white border border-slate-200 rounded-lg p-5">
-              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
-                حالة النظام والكيانات التعليمية
-              </h3>
-              <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-md">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>نظام الكيانات وروابط الدخول المباشر بدون رمز سري نشط ويعمل بالكامل.</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* الكادر التدريسي */}
-        {activeTab === "teachers" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">سجل المعلمين والمدرسين</h2>
-                <p className="text-xs text-slate-500">إدارة حسابات الكادر وتوليد روابط الدخول المباشر بدون رمز سري</p>
-              </div>
-              <Button
-                onClick={() => {
-                  setTeacherMsg(null);
-                  setNewTeacherModal(true);
-                }}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9"
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
               >
-                <UserPlus className="w-3.5 h-3.5 ml-1.5" />
-                إضافة معلم جديد
-              </Button>
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
-                  <tr>
-                    <th className="p-3">اسم المعلم</th>
-                    <th className="p-3">المادة</th>
-                    <th className="p-3">الهاتف</th>
-                    <th className="p-3">رابط الدخول المباشر (بدون رمز سري)</th>
-                    <th className="p-3 text-center">مشاركة واتساب</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {teachers.map((teacher) => {
-                    const directTeacherLink = typeof window !== "undefined"
-                      ? `${window.location.origin}/portal?role=teacher&id=${teacher.id}&name=${encodeURIComponent(teacher.name)}`
-                      : `/portal?role=teacher&id=${teacher.id}`;
+            <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+              {[
+                { id: "overview", label: "النظرة العامة", icon: BarChart3, count: null },
+                { id: "teachers", label: "الكادر التدريسي", icon: Users, count: teachers.length },
+                { id: "classes", label: "الصفوف والشعب", icon: BookOpen, count: classes.length },
+                { id: "students", label: "سجل الطلاب", icon: School, count: students.length },
+                { id: "schedule", label: "الجدول الأسبوعي", icon: Calendar, count: schedules.length },
+                { id: "settings", label: "الإعدادات والنظام", icon: Settings, count: null },
+              ].map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id as typeof activeTab);
+                      setSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
+                      isActive
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-500"}`} />
+                      <span>{item.label}</span>
+                    </div>
+                    {item.count !== null && (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                          isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {item.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="p-3 border-t border-slate-100 space-y-2">
+              <LogoutButton />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. منطقة المحتوى الرئيسي */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto pb-12">
+        <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 mt-5 flex-1">
+          {/* إشعار نسخ الرابط المباشر */}
+          {copySuccess && (
+            <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>{copySuccess}</span>
+              </div>
+              <button
+                onClick={() => setCopySuccess(null)}
+                className="text-emerald-700 hover:text-emerald-900 text-xs px-2"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* واجهة النظرة العامة الفخمة والشاملة */}
+          {activeTab === "overview" && (
+            <div className="space-y-6">
+              {/* ترويسة القيادة والترحيب بالمدير */}
+              <div className="bg-gradient-to-l from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl p-6 sm:p-7 shadow-sm relative overflow-hidden">
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
+                  <div>
+                    <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-white/10 backdrop-blur-xs text-[11px] font-semibold text-emerald-400 mb-2 border border-white/10">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>منظومة الإدارة الذكية السحابية متصلة بالكامل</span>
+                    </div>
+                    <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+                      مرحباً بك، {userRole === "director" ? "المدير العام" : "معاون المدير"} 👋
+                    </h1>
+                    <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
+                      هنا مركز القيادة والتحكم الشامل بمدرستك. يمكنك متابعة الكادر والطلاب والحصص الدراسية وإنجاز العمليات اليومية بنقرة واحدة.
+                    </p>
+                  </div>
+
+                  {/* أزرار الإجراءات السريعة */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      onClick={() => {
+                        setTeacherMsg(null);
+                        setNewTeacherModal(true);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-9 px-3.5 gap-1.5 shadow-sm font-bold"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>إضافة معلم</span>
+                    </Button>
+
+                    <Button
+                      onClick={() => {
+                        setStudentMsg(null);
+                        setSelectedGradeName("");
+                        setNewStudentData({ name: "", classId: "", parentName: "", parentPhone: "" });
+                        setNewStudentModal(true);
+                      }}
+                      className="bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs h-9 px-3.5 gap-1.5 font-bold"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>تسجيل طالب</span>
+                    </Button>
+
+                    <Button
+                      onClick={() => setActiveTab("schedule")}
+                      className="bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs h-9 px-3.5 gap-1.5 font-bold"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>الجدول الأسبوعي</span>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* بطاقات المؤشرات الإحصائية الرئيسية (KPIs) الفاخرة */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* 1. الطلاب */}
+                <div
+                  onClick={() => setActiveTab("students")}
+                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-slate-500">إجمالي الطلاب</span>
+                    <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition">
+                      <School className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-slate-900">{students.length}</div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
+                    <span>متوسط الشعب: {classes.length > 0 ? Math.round(students.length / classes.length) : 0} طالب</span>
+                    <span className="text-blue-600 font-bold">عرض السجل ←</span>
+                  </div>
+                </div>
+
+                {/* 2. الكادر التدريسي */}
+                <div
+                  onClick={() => setActiveTab("teachers")}
+                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-slate-500">الكادر التدريسي</span>
+                    <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition">
+                      <Users className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-slate-900">{teachers.length}</div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
+                    <span>حسابات مفعلة بالروابط</span>
+                    <span className="text-emerald-600 font-bold">عرض الكادر ←</span>
+                  </div>
+                </div>
+
+                {/* 3. الصفوف والشعب */}
+                <div
+                  onClick={() => setActiveTab("classes")}
+                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-slate-500">الشعب الدراسية</span>
+                    <div className="w-9 h-9 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center group-hover:bg-violet-600 group-hover:text-white transition">
+                      <BookOpen className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-slate-900">{classes.length}</div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
+                    <span>موزعة على {groupedClasses.length} صفوف</span>
+                    <span className="text-violet-600 font-bold">إدارة الشعب ←</span>
+                  </div>
+                </div>
+
+                {/* 4. الحصص والجدول الأسبوعي */}
+                <div
+                  onClick={() => setActiveTab("schedule")}
+                  className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-5 shadow-2xs hover:shadow-xs transition cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-slate-500">الحصص المجدولة</span>
+                    <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition">
+                      <Calendar className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div className="text-3xl font-black text-slate-900">{schedules.length}</div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
+                    <span>خطة 5 أيام × 5 حصص</span>
+                    <span className="text-amber-600 font-bold">تعديل الجدول ←</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* قسم المتابعة السريعة وحالة المنظومة */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                {/* ملخص الصفوف والشعب الفعالة */}
+                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs lg:col-span-2">
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-slate-800" />
+                      <h3 className="font-bold text-xs text-slate-900">حالة الصفوف والشعب المعتمدة</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("classes")}
+                      className="text-[11px] font-bold text-blue-600 hover:underline"
+                    >
+                      عرض الكل
+                    </button>
+                  </div>
+
+                  {groupedClasses.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-slate-400">
+                      لم يتم إنشاء أي صف دراسي بعد، يمكنك البدء بإضافة أول صف الآن.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {groupedClasses.slice(0, 4).map((group) => {
+                        const secStudents = group.sections.reduce(
+                          (acc, sec) => acc + students.filter((s) => s.classId === sec.id).length,
+                          0
+                        );
+                        return (
+                          <div
+                            key={group.name}
+                            onClick={() => setActiveTab("classes")}
+                            className="p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-400 transition cursor-pointer flex items-center justify-between"
+                          >
+                            <div>
+                              <div className="font-bold text-xs text-slate-900">{group.name}</div>
+                              <div className="text-[11px] text-slate-500">
+                                {group.sections.length} شعب • {secStudents} طالب
+                              </div>
+                            </div>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-white border border-slate-200 font-semibold text-slate-700">
+                              {group.stage}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* بطاقة حالة المنظومة السحابية والكيانات */}
+                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+                  <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+                    <Activity className="w-4 h-4 text-emerald-600" />
+                    <h3 className="font-bold text-xs text-slate-900">حالة المنظومة والكيانات</h3>
+                  </div>
+
+                  <div className="space-y-2.5 text-xs">
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
+                      <span className="text-slate-600 font-medium">قاعدة البيانات سوبابيس:</span>
+                      <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> متصلة وسريعة
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
+                      <span className="text-slate-600 font-medium">الاستضافة السحابية فيرسل:</span>
+                      <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> نشطة (Vercel)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
+                      <span className="text-slate-600 font-medium">تخزين الصور كلاود فلير R2:</span>
+                      <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> مهيأ ومحمي
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
+                      <span className="text-slate-600 font-medium">بوت التيليجرام:</span>
+                      <span className="text-[11px] font-bold text-slate-700">
+                        {settings.telegramBotUsername ? `@${settings.telegramBotUsername}` : "جاهز للربط"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* الكادر التدريسي المطور (بطاقات ثنائية لكل مدرسين في سطر واحد) */}
+          {activeTab === "teachers" && (
+            <div className="space-y-5">
+              {/* شريط التحكم والبحث وإضافة معلم */}
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">سجل المعلمين والمدرسين</h2>
+                  <p className="text-xs text-slate-500">
+                    إجمالي الكادر: {teachers.length} معلم • انقر على أي معلم لعرض تفاصيله الكاملة والصفوف التي يُدرّس لها
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {/* حقل البحث السريع */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={teacherSearch}
+                      onChange={(e) => setTeacherSearch(e.target.value)}
+                      placeholder="بحث باسم المعلم أو المادة..."
+                      className="pr-8 pl-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg w-52 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </div>
+
+                  <Button
+                    onClick={() => {
+                      setTeacherMsg(null);
+                      setNewTeacherModal(true);
+                    }}
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 px-4 gap-1.5 font-bold shadow-xs"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>إضافة معلم جديد</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* شبكة المعلمين: كل مدرسين اثنين في سطر واحد دائماً */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {teachers
+                  .filter((t) => {
+                    if (!teacherSearch.trim()) return true;
+                    const query = teacherSearch.toLowerCase();
+                    return t.name.toLowerCase().includes(query) || t.subject.toLowerCase().includes(query);
+                  })
+                  .map((teacher) => {
+                    const stats = getTeacherStats(teacher.id);
+                    const directTeacherLink =
+                      typeof window !== "undefined"
+                        ? `${window.location.origin}/portal?role=teacher&id=${teacher.id}&name=${encodeURIComponent(teacher.name)}`
+                        : `/portal?role=teacher&id=${teacher.id}`;
 
                     return (
-                      <tr key={teacher.id} className="hover:bg-slate-50/60">
-                        <td className="p-3 font-semibold text-slate-900">{teacher.name}</td>
-                        <td className="p-3 text-slate-600">{teacher.subject}</td>
-                        <td className="p-3 font-mono text-slate-700" dir="ltr">
-                          {parseAndFormatPhone(teacher.phone).displayFormatted}
-                        </td>
-                        <td className="p-3">
+                      <div
+                        key={teacher.id}
+                        onClick={() => {
+                          setSelectedTeacherForView(teacher);
+                          setTeacherDetailModal(true);
+                        }}
+                        className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-4.5 shadow-2xs hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between group"
+                        title="انقر لعرض كامل التفاصيل والصفوف وجدول الحصص"
+                      >
+                        <div>
+                          {/* ترويسة بطاقة المعلم */}
+                          <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100 mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm shrink-0 group-hover:bg-blue-600 transition-colors shadow-2xs">
+                                {teacher.name.charAt(0)}
+                              </div>
+                              <div>
+                                <h3 className="font-bold text-sm text-slate-900 group-hover:text-blue-600 transition-colors">
+                                  {teacher.name}
+                                </h3>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[11px] px-2 py-0.5 rounded font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                    {teacher.subject}
+                                  </span>
+                                  <span className="text-[11px] text-slate-500 font-mono" dir="ltr">
+                                    {parseAndFormatPhone(teacher.phone).displayFormatted}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <span className="text-[10px] text-slate-400 group-hover:text-slate-700 font-bold bg-slate-50 group-hover:bg-slate-100 px-2 py-1 rounded transition shrink-0">
+                              التفاصيل ←
+                            </span>
+                          </div>
+
+                          {/* ملخص الصفوف والحصص المسندة له في الجدول */}
+                          <div className="space-y-1.5 mb-3">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500 text-[11px] font-semibold">الحصص الأسبوعية:</span>
+                              <span className="font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
+                                {stats.totalPeriods} حصة موزعة
+                              </span>
+                            </div>
+
+                            <div className="text-[11px] text-slate-600">
+                              <span className="text-slate-500 font-semibold block mb-1">الصفوف والشعب المسندة:</span>
+                              {stats.classesList.length === 0 ? (
+                                <span className="text-slate-400 italic text-[10px]">
+                                  لم يتم تحديد حصص له بالجدول بعد
+                                </span>
+                              ) : (
+                                <div className="flex flex-wrap gap-1">
+                                  {stats.classesList.map((cls, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-[10px] font-bold text-slate-700"
+                                    >
+                                      {cls.name} ({cls.count} حصص)
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* أزرار الإجراءات السريعة أسفل البطاقة */}
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-1 text-xs"
+                        >
                           <div className="flex items-center gap-1.5">
                             <button
                               type="button"
                               onClick={() => copyToClipboard(directTeacherLink, `رابط الأستاذ ${teacher.name}`)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-[11px] border border-slate-200 transition"
-                              title="نسخ رابط الدخول المباشر"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] border border-slate-200 transition"
+                              title="نسخ الرابط المباشر"
                             >
-                              <Copy className="w-3 h-3 text-slate-600" />
+                              <Copy className="w-3 h-3" />
                               <span>نسخ الرابط</span>
                             </button>
 
@@ -891,39 +1349,48 @@ export function ManagementDashboard({
                               href={directTeacherLink}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-50 hover:bg-slate-100 text-slate-600 text-[11px] border border-slate-200 transition"
-                              title="تجربة الدخول بحساب المعلم مباشرة"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold text-[11px] border border-slate-200 transition"
+                              title="فتح لوحة المعلم"
                             >
                               <ExternalLink className="w-3 h-3" />
                               <span>فتح</span>
                             </a>
                           </div>
-                        </td>
-                        <td className="p-3 text-center">
+
                           <button
+                            type="button"
                             onClick={() => sendWhatsAppInvite(teacher)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-medium text-xs border border-emerald-200 transition"
-                            title="إرسال رابط الحساب عبر واتساب"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] border border-emerald-200 transition"
+                            title="إرسال الرابط عبر واتساب"
                           >
                             <Share2 className="w-3 h-3 text-emerald-600" />
-                            <span>إرسال الرابط بالواتساب</span>
+                            <span>واتساب</span>
                           </button>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     );
                   })}
-                  {teachers.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="p-6 text-center text-slate-400">
-                        لا يوجد معلمون مسجلون بعد. اضغط على زر &quot;إضافة معلم جديد&quot; لتسجيل أول معلم.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              </div>
+
+              {teachers.length === 0 && (
+                <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-200">
+                  <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-slate-700">لا يوجد معلمون مسجلون بعد</p>
+                  <p className="text-[11px] text-slate-500 mb-3">ابدأ بإضافة أول معلم للمدرسة وسيتم توليد رابط دخوله فوراً</p>
+                  <Button
+                    onClick={() => {
+                      setTeacherMsg(null);
+                      setNewTeacherModal(true);
+                    }}
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8"
+                  >
+                    <Plus className="w-3.5 h-3.5 ml-1" />
+                    إضافة معلم الآن
+                  </Button>
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          )}
 
         {/* الصفوف والشعب */}
         {activeTab === "classes" && (
@@ -1645,6 +2112,7 @@ export function ManagementDashboard({
           </div>
         )}
       </main>
+      </div>
 
       {/* نافذة إضافة معلم */}
       {newTeacherModal && (
@@ -2447,6 +2915,276 @@ export function ManagementDashboard({
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة تفاصيل المعلم الشاملة والصفوف الموزعة له بالجدول */}
+      {teacherDetailModal && selectedTeacherForView && (() => {
+        const stats = getTeacherStats(selectedTeacherForView.id);
+        const directTeacherLink =
+          typeof window !== "undefined"
+            ? `${window.location.origin}/portal?role=teacher&id=${selectedTeacherForView.id}&name=${encodeURIComponent(selectedTeacherForView.name)}`
+            : `/portal?role=teacher&id=${selectedTeacherForView.id}`;
+
+        return (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] flex flex-col p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+              {/* رأس النافذة */}
+              <div className="flex items-start justify-between pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                    {selectedTeacherForView.name.charAt(0)}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-slate-900">{selectedTeacherForView.name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                        {selectedTeacherForView.subject}
+                      </span>
+                      <span className="text-xs text-slate-500 font-mono" dir="ltr">
+                        {parseAndFormatPhone(selectedTeacherForView.phone).displayFormatted}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setTeacherDetailModal(false)}
+                  className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* محتوى التفاصيل والصفوف التي يدرس بها */}
+              <div className="flex-1 overflow-y-auto py-4 space-y-4">
+                {/* إحصائيات المعلم السريعة */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                    <span className="text-[11px] text-slate-500 font-semibold block mb-0.5">إجمالي الحصص الأسبوعية</span>
+                    <span className="text-2xl font-black text-slate-900">{stats.totalPeriods}</span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">حصة موزعة في الجدول</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                    <span className="text-[11px] text-slate-500 font-semibold block mb-0.5">الصفوف والشعب المسندة</span>
+                    <span className="text-2xl font-black text-slate-900">{stats.classesList.length}</span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">شعب دراسية مسندة</span>
+                  </div>
+                </div>
+
+                {/* الصفوف والشعب التي يدرّس بها المعلم حسب الجدول */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-slate-700" />
+                      <h4 className="font-bold text-xs text-slate-900">الصفوف والشعب المسندة حسب الجدول الأسبوعي:</h4>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-white font-bold text-slate-600 border border-slate-200">
+                      {stats.classesList.length} فصول
+                    </span>
+                  </div>
+
+                  {stats.classesList.length === 0 ? (
+                    <div className="text-center py-5 bg-white rounded-lg border border-dashed border-slate-300">
+                      <p className="text-xs text-slate-500">لم يتم تسكين أي حصة لهذا المعلم في الجدول الأسبوعي بعد.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTeacherDetailModal(false);
+                          setActiveTab("schedule");
+                        }}
+                        className="mt-2 text-xs font-bold text-blue-600 hover:underline inline-flex items-center gap-1"
+                      >
+                        <span>الانتقال لجدول الحصص الأسبوعي لتثبيت دروسه ←</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {stats.classesList.map((cls, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-white border border-slate-200 p-2.5 rounded-lg flex items-center justify-between shadow-2xs"
+                        >
+                          <span className="font-bold text-xs text-slate-800">{cls.name}</span>
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            {cls.count} حصص/أسبوع
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* توزيع الحصص التفصيلي في أيام الأسبوع */}
+                {stats.schedules.length > 0 && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="w-4 h-4 text-slate-700" />
+                      <h4 className="font-bold text-xs text-slate-900">مواعيد الحصص في الجدول:</h4>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1">
+                      {stats.schedules.map((entry) => {
+                        const dayName = daysList.find((d) => d.id === entry.day)?.name || "يوم";
+                        return (
+                          <span
+                            key={entry.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 text-slate-800 border border-slate-200 text-[11px]"
+                          >
+                            <span className="font-bold text-slate-900">{dayName}</span>
+                            <span className="text-slate-500">• الحصة {entry.period}</span>
+                            <span className="text-blue-700 font-bold">({entry.className})</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* شريط الإجراءات والعمليات على المعلم */}
+              <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {/* زر واتساب */}
+                  <Button
+                    type="button"
+                    onClick={() => sendWhatsAppInvite(selectedTeacherForView)}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-9 gap-1.5 font-bold"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>مشاركة واتساب</span>
+                  </Button>
+
+                  {/* زر فتح اللوحة */}
+                  <a
+                    href={directTeacherLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 rounded-md font-bold transition"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>فتح اللوحة مباشرة</span>
+                  </a>
+
+                  {/* زر نسخ الرابط */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => copyToClipboard(directTeacherLink, `رابط الأستاذ ${selectedTeacherForView.name}`)}
+                    className="text-slate-700 hover:bg-slate-100 text-xs h-9 gap-1.5 font-bold border-slate-300"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>نسخ الرابط</span>
+                  </Button>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                  {/* زر التعديل */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setEditTeacherData({
+                        id: selectedTeacherForView.id,
+                        name: selectedTeacherForView.name,
+                        phone: selectedTeacherForView.phone,
+                        subject: selectedTeacherForView.subject,
+                      });
+                      setEditTeacherModal(true);
+                    }}
+                    className="text-xs h-8 gap-1.5 font-semibold text-slate-800 border-slate-300 hover:bg-slate-100"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>تعديل بيانات المعلم</span>
+                  </Button>
+
+                  {/* زر الحذف */}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => handleDeleteTeacher(selectedTeacherForView.id, selectedTeacherForView.name)}
+                    className="text-xs h-8 gap-1.5 font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>حذف المعلم</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* نافذة تعديل بيانات المعلم */}
+      {editTeacherModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="font-bold text-sm text-slate-900 mb-1">تعديل بيانات المعلم</h3>
+            <p className="text-xs text-slate-500 mb-4">تحديث الاسم والمادة ورقم الهاتف في قاعدة البيانات</p>
+
+            <form onSubmit={handleUpdateTeacher} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">الاسم الكامل:</label>
+                <input
+                  type="text"
+                  required
+                  value={editTeacherData.name}
+                  onChange={(e) => setEditTeacherData({ ...editTeacherData, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">المادة الدراسية:</label>
+                <select
+                  value={editTeacherData.subject}
+                  onChange={(e) => setEditTeacherData({ ...editTeacherData, subject: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 bg-white"
+                >
+                  <option value="">اختر المادة...</option>
+                  {subjects.map((sub) => (
+                    <option key={sub.id} value={sub.name}>
+                      {sub.name}
+                    </option>
+                  ))}
+                  <option value="عام">عام / أخرى</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">رقم الهاتف:</label>
+                <input
+                  type="text"
+                  required
+                  value={editTeacherData.phone}
+                  onChange={(e) => setEditTeacherData({ ...editTeacherData, phone: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-800 font-mono"
+                  dir="ltr"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={editTeacherLoading}
+                  onClick={() => setEditTeacherModal(false)}
+                  className="text-xs h-8"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={editTeacherLoading}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 gap-1.5"
+                >
+                  {editTeacherLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{editTeacherLoading ? "جارٍ الحفظ..." : "حفظ التعديلات"}</span>
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}
