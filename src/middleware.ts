@@ -1,7 +1,36 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { checkRateLimit, createBlockedResponse } from "@/lib/rate-limiter";
 
 export async function middleware(request: NextRequest) {
+  // 1. فحص الحماية من الزيارات المكررة والهجمات لحماية رصيد فيرسل فوراً
+  const securityResult = checkRateLimit(request);
+  if (!securityResult.allowed) {
+    const isApi =
+      request.nextUrl.pathname.startsWith("/api") ||
+      request.headers.get("accept")?.includes("application/json");
+
+    if (isApi) {
+      return NextResponse.json(
+        {
+          error: securityResult.reason || "تم حظر الوصول مؤقتاً بسبب كثرة الطلبات غير الطبيعية لحماية السيرفر.",
+          banned: true,
+          remainingTimeSeconds: securityResult.remainingTimeSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(securityResult.remainingTimeSeconds || 60),
+            "X-RateLimit-Banned": "true",
+          },
+        }
+      );
+    }
+
+    return createBlockedResponse(securityResult);
+  }
+
+  // 2. معالجة الطلبات الطبيعية
   let response = NextResponse.next({
     request: {
       headers: request.headers,
