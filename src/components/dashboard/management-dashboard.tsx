@@ -1170,58 +1170,61 @@ export function ManagementDashboard({
             </div>
           )}
 
-          {/* الكادر التدريسي المطور (بطاقات ثنائية لكل مدرسين في سطر واحد) */}
+          {/* الكادر التدريسي المطور (سجل المدرسين المدمج والبطاقات الثنائية) */}
           {activeTab === "teachers" && (
-            <div className="space-y-5">
-              {/* شريط التحكم والبحث وإضافة معلم */}
-              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900">سجل المعلمين والمدرسين</h2>
-                  <p className="text-xs text-slate-500">
-                    إجمالي الكادر: {teachers.length} معلم • انقر على أي معلم لعرض تفاصيله الكاملة والصفوف التي يُدرّس لها
-                  </p>
+            <div className="space-y-4">
+              {/* شريط سجل المدرسين والبحث الذكي وزر الإضافة */}
+              <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2 shrink-0">
+                  <h2 className="text-sm font-bold text-slate-900">سجل المدرسين</h2>
+                  <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                    {teachers.length}
+                  </span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2.5">
-                  {/* حقل البحث السريع */}
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
+                <div className="flex items-center gap-1.5 flex-1 max-w-xs justify-end">
+                  {/* حقل البحث الذكي (الاسم، المادة، رقم الهاتف) */}
+                  <div className="relative flex-1 min-w-[130px]">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
                     <input
                       type="text"
                       value={teacherSearch}
                       onChange={(e) => setTeacherSearch(e.target.value)}
-                      placeholder="بحث باسم المعلم أو المادة..."
-                      className="pr-8 pl-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg w-52 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                      placeholder="بحث (اسم، مادة، رقم)..."
+                      className="w-full pr-8 pl-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-800 focus:bg-white transition"
                     />
                   </div>
 
+                  {/* زر + لإضافة مدرس جديد */}
                   <Button
+                    type="button"
                     onClick={() => {
                       setTeacherMsg(null);
                       setNewTeacherModal(true);
                     }}
-                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-9 px-4 gap-1.5 font-bold shadow-xs"
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8 w-8 p-0 rounded-lg shrink-0 flex items-center justify-center shadow-xs"
+                    title="إضافة مدرس جديد"
                   >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>إضافة معلم جديد</span>
+                    <Plus className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
 
-              {/* شبكة المعلمين: كل مدرسين اثنين في سطر واحد دائماً */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* شبكة المدرسين: كل مدرسين اثنين بجانب بعضهما دائماً مع اختصار التفاصيل */}
+              <div className="grid grid-cols-2 gap-2 sm:gap-3.5">
                 {teachers
                   .filter((t) => {
                     if (!teacherSearch.trim()) return true;
-                    const query = teacherSearch.toLowerCase();
-                    return t.name.toLowerCase().includes(query) || t.subject.toLowerCase().includes(query);
+                    const q = teacherSearch.trim().toLowerCase();
+                    const digitsQ = q.replace(/[^0-9]/g, "");
+                    const matchName = (t.name || "").toLowerCase().includes(q);
+                    const matchSubject = (t.subject || "").toLowerCase().includes(q);
+                    const teacherDigits = (t.phone || "").replace(/[^0-9]/g, "");
+                    const matchPhone = digitsQ.length > 0 && teacherDigits.includes(digitsQ);
+                    return matchName || matchSubject || matchPhone;
                   })
                   .map((teacher) => {
                     const stats = getTeacherStats(teacher.id);
-                    const directTeacherLink =
-                      typeof window !== "undefined"
-                        ? `${window.location.origin}/portal?role=teacher&id=${teacher.id}&name=${encodeURIComponent(teacher.name)}`
-                        : `/portal?role=teacher&id=${teacher.id}`;
 
                     return (
                       <div
@@ -1230,104 +1233,36 @@ export function ManagementDashboard({
                           setSelectedTeacherForView(teacher);
                           setTeacherDetailModal(true);
                         }}
-                        className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-4.5 shadow-2xs hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between group"
-                        title="انقر لعرض كامل التفاصيل والصفوف وجدول الحصص"
+                        className="bg-white border border-slate-200 hover:border-slate-800 rounded-xl p-3 shadow-2xs hover:shadow-xs transition-all cursor-pointer flex flex-col justify-between group active:scale-[0.99]"
+                        title="انقر لعرض كامل التفاصيل والصفوف والجدول"
                       >
-                        <div>
-                          {/* ترويسة بطاقة المعلم */}
-                          <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100 mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm shrink-0 group-hover:bg-blue-600 transition-colors shadow-2xs">
-                                {teacher.name.charAt(0)}
-                              </div>
-                              <div>
-                                <h3 className="font-bold text-sm text-slate-900 group-hover:text-blue-600 transition-colors">
-                                  {teacher.name}
-                                </h3>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="text-[11px] px-2 py-0.5 rounded font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                                    {teacher.subject}
-                                  </span>
-                                  <span className="text-[11px] text-slate-500 font-mono" dir="ltr">
-                                    {parseAndFormatPhone(teacher.phone).displayFormatted}
-                                  </span>
-                                </div>
-                              </div>
+                        <div className="space-y-2">
+                          {/* رمز واسم المدرس */}
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-xs shrink-0 group-hover:bg-blue-600 transition-colors shadow-2xs">
+                              {teacher.name.charAt(0)}
                             </div>
-
-                            <span className="text-[10px] text-slate-400 group-hover:text-slate-700 font-bold bg-slate-50 group-hover:bg-slate-100 px-2 py-1 rounded transition shrink-0">
-                              التفاصيل ←
-                            </span>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-bold text-xs sm:text-sm text-slate-900 truncate group-hover:text-blue-600 transition-colors">
+                                {teacher.name}
+                              </h3>
+                            </div>
                           </div>
 
-                          {/* ملخص الصفوف والحصص المسندة له في الجدول */}
-                          <div className="space-y-1.5 mb-3">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="text-slate-500 text-[11px] font-semibold">الحصص الأسبوعية:</span>
-                              <span className="font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
-                                {stats.totalPeriods} حصة موزعة
-                              </span>
-                            </div>
-
-                            <div className="text-[11px] text-slate-600">
-                              <span className="text-slate-500 font-semibold block mb-1">الصفوف والشعب المسندة:</span>
-                              {stats.classesList.length === 0 ? (
-                                <span className="text-slate-400 italic text-[10px]">
-                                  لم يتم تحديد حصص له بالجدول بعد
-                                </span>
-                              ) : (
-                                <div className="flex flex-wrap gap-1">
-                                  {stats.classesList.map((cls, idx) => (
-                                    <span
-                                      key={idx}
-                                      className="px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-[10px] font-bold text-slate-700"
-                                    >
-                                      {cls.name} ({cls.count} حصص)
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                          {/* اسم المادة */}
+                          <div>
+                            <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200/80 truncate max-w-full">
+                              {teacher.subject}
+                            </span>
                           </div>
                         </div>
 
-                        {/* أزرار الإجراءات السريعة أسفل البطاقة */}
-                        <div
-                          onClick={(e) => e.stopPropagation()}
-                          className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-1 text-xs"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(directTeacherLink, `رابط الأستاذ ${teacher.name}`)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] border border-slate-200 transition"
-                              title="نسخ الرابط المباشر"
-                            >
-                              <Copy className="w-3 h-3" />
-                              <span>نسخ الرابط</span>
-                            </button>
-
-                            <a
-                              href={directTeacherLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold text-[11px] border border-slate-200 transition"
-                              title="فتح لوحة المعلم"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              <span>فتح</span>
-                            </a>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => sendWhatsAppInvite(teacher)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] border border-emerald-200 transition"
-                            title="إرسال الرابط عبر واتساب"
-                          >
-                            <Share2 className="w-3 h-3 text-emerald-600" />
-                            <span>واتساب</span>
-                          </button>
+                        {/* عدد الحصص بالاسبوع */}
+                        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                          <span className="text-slate-500 font-medium">الحصص:</span>
+                          <span className="font-bold text-slate-900 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60">
+                            {stats.totalPeriods} حصص/أسبوع
+                          </span>
                         </div>
                       </div>
                     );
@@ -1337,8 +1272,8 @@ export function ManagementDashboard({
               {teachers.length === 0 && (
                 <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-200">
                   <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                  <p className="text-xs font-bold text-slate-700">لا يوجد معلمون مسجلون بعد</p>
-                  <p className="text-[11px] text-slate-500 mb-3">ابدأ بإضافة أول معلم للمدرسة وسيتم توليد رابط دخوله فوراً</p>
+                  <p className="text-xs font-bold text-slate-700">لا يوجد مدرسون مسجلون بعد</p>
+                  <p className="text-[11px] text-slate-500 mb-3">ابدأ بإضافة أول مدرس للمدرسة</p>
                   <Button
                     onClick={() => {
                       setTeacherMsg(null);
@@ -1347,7 +1282,7 @@ export function ManagementDashboard({
                     className="bg-slate-900 hover:bg-slate-800 text-white text-xs h-8"
                   >
                     <Plus className="w-3.5 h-3.5 ml-1" />
-                    إضافة معلم الآن
+                    إضافة مدرس الآن
                   </Button>
                 </div>
               )}
