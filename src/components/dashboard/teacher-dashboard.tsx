@@ -81,7 +81,13 @@ interface Submission {
   feedback?: string;
 }
 
-export function TeacherDashboard({ currentUserName }: { currentUserName?: string }) {
+export function TeacherDashboard({
+  currentUserName,
+  currentUserId,
+}: {
+  currentUserName?: string;
+  currentUserId?: string;
+}) {
   const [activeTab, setActiveTab] = useState<
     "schedule" | "attendance" | "grades" | "homeworks" | "behavior" | "lesson_plan"
   >("schedule");
@@ -169,8 +175,41 @@ export function TeacherDashboard({ currentUserName }: { currentUserName?: string
         }
       }
 
-      // 2. جلب جدول المعلم
-      if (userId) {
+      // 2. جلب جدول المعلم الموثوق عبر السيرفر الذكي (يتجاوز قيود RLS ويدعم الاسم والمعرف بدقة)
+      let schedulesLoaded = false;
+      try {
+        const queryParams = new URLSearchParams();
+        if (currentUserName) queryParams.set("name", currentUserName);
+        if (currentUserId) queryParams.set("teacherId", currentUserId);
+        if (userId) queryParams.set("userId", userId);
+
+        const res = await fetch(`/api/teachers/schedule?${queryParams.toString()}`);
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.schedules) && data.schedules.length > 0) {
+          setTeacherDetailedSchedules(data.schedules);
+          setScheduleList(
+            data.schedules.map((s: any) => ({
+              day: s.day,
+              period: s.period,
+              className: s.className,
+              subject: s.subject,
+            }))
+          );
+          if (data.teacherId) {
+            setCurrentTeacherId(data.teacherId);
+          }
+          if (Array.isArray(data.students) && data.students.length > 0) {
+            setTeacherAllStudents(data.students);
+          }
+          schedulesLoaded = true;
+        }
+      } catch (apiErr) {
+        console.warn("Could not fetch schedules via API, falling back:", apiErr);
+      }
+
+      // محاولة احتياطية إذا لم يتم الجلب عبر السيرفر
+      if (!schedulesLoaded && userId) {
         const { data: teacherRec } = await supabase.from("teachers").select("id").eq("profile_id", userId).single();
         const teacherId = teacherRec?.id;
 

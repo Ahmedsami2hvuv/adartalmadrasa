@@ -12,6 +12,7 @@ export default function DashboardPage() {
     "director" | "vice_director" | "teacher" | "student" | "parent" | null
   >(null);
   const [userName, setUserName] = useState<string>("");
+  const [userId, setUserId] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export default function DashboardPage() {
 
         const cookieRole = getCookie("auth_role") as "director" | "vice_director" | "teacher" | "student" | "parent" | null;
         const cookieName = getCookie("auth_name");
+        const cookieId = getCookie("auth_id");
 
         const cleanName = (() => {
           if (!cookieName) return cookieRole === "director" ? "المدير العام" : "المعاون الإداري";
@@ -53,6 +55,7 @@ export default function DashboardPage() {
           if (isMounted) {
             setRole(cookieRole);
             setUserName(cleanName);
+            if (cookieId) setUserId(cookieId);
             setLoading(false);
           }
           return;
@@ -130,7 +133,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-slate-100 text-slate-900 selection:bg-slate-800 selection:text-white">
       {role === "director" && <ManagementDashboard userRole="director" currentUserName={userName} />}
       {role === "vice_director" && <ManagementDashboard userRole="vice_director" currentUserName={userName} />}
-      {role === "teacher" && <TeacherDashboard currentUserName={userName} />}
+      {role === "teacher" && <TeacherDashboard currentUserName={userName} currentUserId={userId} />}
       {role === "student" && <StudentDashboard currentUserName={userName} />}
       {role === "parent" && <ParentDashboard currentUserName={userName} />}
     </div>
