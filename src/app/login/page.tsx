@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Lock, AlertCircle, School, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { Lock, AlertCircle, School, Eye, EyeOff, ShieldCheck, X } from "lucide-react";
 import { InstallPWA } from "@/components/install-pwa";
 
 export default function LoginPage() {
@@ -98,19 +98,38 @@ export default function LoginPage() {
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errorMsg) setErrorMsg("");
+                  }}
                   placeholder="••••••••••••"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-300 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-800 font-mono"
+                  className="w-full pl-16 pr-3 py-2.5 rounded-lg border border-slate-300 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-800 font-mono"
                   dir="ltr"
                   autoFocus
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-2.5 top-2.5 text-slate-400 hover:text-slate-600 transition"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-slate-400">
+                  {password.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPassword("");
+                        if (errorMsg) setErrorMsg("");
+                      }}
+                      className="p-1 rounded-md hover:bg-slate-100 hover:text-slate-700 text-slate-400 transition"
+                      title="مسح المكتوب"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="p-1 rounded-md hover:bg-slate-100 hover:text-slate-600 transition"
+                    title={showPassword ? "إخفاء رمز المرور" : "إظهار رمز المرور"}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
             </div>
 
